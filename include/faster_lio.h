@@ -25,7 +25,6 @@ struct FasterLioConfig{
 };
 
 class faster_lio : public LioBase{
-//class FasterLio3{
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   using IVoxType = ivox3d::IVox<3, ivox3d::IVoxNodeType::DEFAULT, PointType>;
@@ -86,9 +85,6 @@ private:
 
 
   size_t frame_id_ = 0;
-
-
-
 };
 
 } // namespace simple_lio
