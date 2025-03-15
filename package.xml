@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>simple_lio</name>
+  <version>0.0.0</version>
+  <description>
+    This is a modified version of Faster-LIO and Fast-LIO2.
+    The original algorithm are described in those following papers:
+    "Faster_lio: Lightweight tightly coupled lidar-inertial odometry using parallel sparse incremental voxels,” IEEE
+    Robotics and Automation Letters, vol. 7, no. 2, pp. 4861–4868, 2022.
+    "Fast-lio2: Fast direct lidar-inertial odometry,” IEEE Transactions on Robotics, vol. 38, no. 4, pp. 2053–2073, 2022.
+  </description>
+
+  <maintainer email="myx1992468@gmail.com">myx</maintainer>
+
+  <license>BSD</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>roscpp</depend>
+  <depend>rospy</depend>
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>tf</depend>
+  <depend>pcl_ros</depend>
+  <depend>message_generation</depend>
+  <depend>message_runtime</depend>
+
+  <test_depend>rostest</test_depend>
+  <test_depend>rosbag</test_depend>
+</package>
