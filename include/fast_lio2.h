@@ -16,41 +16,24 @@
 #include "ivox3d/ivox3d.h"
 #include "common/pointcloud_preprocess.h"
 #include "common/use-ikfom.hpp"
-#include <ikd-Tree/ikd_Tree.hpp>
+#include "ikd-Tree/ikd_Tree.hpp"
+
+#include "lio_base.h"
 
 namespace simple_lio {
-enum nearest_neighbor_type{
-  IKD_TREE,
-  IVOX
-};
 
-class fast_lio2{
+class fast_lio2 : public LioBase{
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
-  using IVoxType = ivox3d::IVox<3, ivox3d::IVoxNodeType::DEFAULT, PointType>;
 
   fast_lio2();
   ~fast_lio2();
 
   // init with ros
   bool InitROS(ros::NodeHandle &nh);
-  // init without ros
-  bool InitWithoutROS(const std::string &config_yaml);
 
   void Run();
 
-  // callbacks of lidar and imu
-  void StandardPCLCallBack(const sensor_msgs::PointCloud2::ConstPtr &msg);
-  void LivoxPCLCallBack(const livox_ros_driver::CustomMsg::ConstPtr &msg);
-  void IMUCallBack(const sensor_msgs::Imu::ConstPtr &msg_in);
-
-  // sync lidar with imu
-  bool SyncPackages();
-
-  // get quantile
-  static float getQuantile(vector<float>& data, float quantile);
-  // detection outlier
-  static void detectOutliers(vector<float>& data, vector<float>& normal_data, std::vector<bool> &point_selected_surf);
   // interface of mtk, customized obseravtion model
   void ObsModel(state_ikfom &state_ikf, esekfom::dyn_share_datastruct<double> &ekfom_data);
 
@@ -77,22 +60,12 @@ private:
   void SubAndPubToROS(ros::NodeHandle &nh);
 
   bool InitParamsFromROS(ros::NodeHandle &nh);
-  bool LoadParamsFromYAML(const std::string &yaml);
-
-  void PrintState(const state_ikfom &s);
 
 private:
   float ESTI_PLANE_THRESHOLD_ = 0.1;
   int NUM_MAX_ITERATIONS_ = 3;
-  // nearest neighbor type select
-  nearest_neighbor_type nn_type_ = nearest_neighbor_type::IVOX;
-
-  IVoxType::Options ivox_options_;
-  std::shared_ptr<IVoxType> ivox_ = nullptr;
 
   KD_TREE<PointType> ikd_tree_;
-  pcl::VoxelGrid<PointType> down_size_filter_surf_;
-  BoxPointType local_map_points_{};
 
   std::shared_ptr<PointCloudPreprocess> preprocess_ = nullptr;  // point cloud preprocess
   std::shared_ptr<ImuProcess> p_imu_ = nullptr;                 // imu process
@@ -151,9 +124,7 @@ private:
   /// statistics and flags ///
   int scan_count_ = 0;
   int publish_count_ = 0;
-  bool flg_first_scan_ = true;
   bool flg_EKF_inited_ = false;
-  int pcd_index_ = 0;
   double lidar_mean_scantime_ = 0.0;
   int scan_num_ = 0;
   bool timediff_set_flg_ = false;
@@ -163,8 +134,7 @@ private:
   MeasureGroup measures_;                    // sync IMU and lidar scan
   esekfom::esekf<state_ikfom, 12, input_ikfom> kf_;  // esekf
   state_ikfom state_point_;                          // ekf current state
-  vect3 pos_lidar_;                                  // lidar position after eskf update
-  Vec3d euler_cur_ = Vec3d::Zero();      // rotation in euler angles
+
   bool extrinsic_est_en_ = true;
 
   /////////////////////////  debug show / save /////////////////////////////////////////////////////////
@@ -178,7 +148,6 @@ private:
   bool runtime_pos_log_ = true;
   int pcd_save_interval_ = -1;
   bool traj_save_en_ = false;
-  std::string dataset_;
 
   PointCloudType::Ptr pcl_wait_save_{new PointCloudType()};  // debug save
   nav_msgs::Path path_;

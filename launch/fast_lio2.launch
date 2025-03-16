@@ -1,0 +1,19 @@
+<launch>
+<!-- Launch file for ouster OS2-64 LiDAR -->
+
+    <arg name="rviz" default="true" />
+
+    <rosparam command="load" file="$(find simple_lio)/config/ouster64.yaml" />
+    <rosparam command="load" file="$(find simple_lio)/config/lio_ouster64.yaml" />
+
+    <node pkg="simple_lio" type="fast_lio2_test" name="fast_lio2_test" output="screen" />
+<!-- 	<group if="$(arg rviz)"> -->
+<!-- 	    <node launch-prefix="nice" pkg="rviz" type="rviz" name="rviz" -->
+<!-- 	    args="-d $(find simple_lio)/config/rviz/simple_lio.rviz" /> -->
+<!-- 	</group> -->
+
+    <group if="$(arg rviz)">
+	    <node launch-prefix="nice" pkg="rviz" type="rviz" name="rviz"
+	    args="-d $(find simple_lio)/config/rviz/loam_livox.rviz" />
+	</group>
+</launch>

@@ -2,19 +2,19 @@
 // Created by myx on 2024/8/17.
 //
 
-#include "fast_lio2.h"
+#include "lio.h"
 
 #include <tf/transform_broadcaster.h>
 
 namespace simple_lio{
 
 // public
-fast_lio2::fast_lio2() {
+lio::lio() {
   preprocess_.reset(new PointCloudPreprocess());
   p_imu_.reset(new ImuProcess());
 }
 
-fast_lio2::~fast_lio2() {
+lio::~lio() {
   scan_down_body_ = nullptr;
   scan_undistort_ = nullptr;
   scan_down_world_ = nullptr;
@@ -22,13 +22,17 @@ fast_lio2::~fast_lio2() {
 }
 
 // init with ros
-bool fast_lio2::InitROS(ros::NodeHandle &nh) {
+bool lio::InitROS(ros::NodeHandle &nh) {
   if(!InitParamsFromROS(nh)){
     ROS_ERROR("InitParamsFromROS ERROR!");
     return false;
   }
 
   SubAndPubToROS(nh);
+
+  if(nn_type_ == nearest_neighbor_type::IVOX){
+    ivox_ = std::make_shared<IVoxType>(ivox_options_);
+  }
 
   // esekf init
   std::vector<double> epsi(23, 0.001);
@@ -40,8 +44,12 @@ bool fast_lio2::InitROS(ros::NodeHandle &nh) {
   return true;
 }
 
+// init without ros
+bool lio::InitWithoutROS(const std::string &config_yaml){
+  return true;
+}
 
-void fast_lio2::Run(){
+void lio::Run(){
   if (!SyncPackages()) {
     return;
   }
@@ -56,12 +64,30 @@ void fast_lio2::Run(){
       return;
     }
 
+    if(nn_type_ == nearest_neighbor_type::IVOX){
+      if (flg_first_scan_) {
+        ivox_->AddPoints(scan_undistort_->points);
+        first_lidar_time_ = measures_.lidar_beg_time_;
+        flg_first_scan_ = false;
+        return_flag = true;
+        return;
+      }
+    }
 
     flg_EKF_inited_ = (measures_.lidar_beg_time_ - first_lidar_time_) >= INIT_TIME;
 
     // down_sample
-    voxel_scan_.setInputCloud(scan_undistort_);
-    voxel_scan_.filter(*scan_down_body_);
+    if(nn_type_ == nearest_neighbor_type::IKD_TREE){
+      //      Timer::Evaluate([&, this]() {
+      voxel_scan_.setInputCloud(scan_undistort_);
+      voxel_scan_.filter(*scan_down_body_);
+      //      },"Downsample PointCloud");
+    } else if(nn_type_ == nearest_neighbor_type::IVOX){
+      //      Timer::Evaluate([&, this]() {
+      voxel_scan_.setInputCloud(scan_undistort_);
+      voxel_scan_.filter(*scan_down_body_);
+      //      },"Downsample PointCloud");
+    }
 
     unsigned long cur_pts = scan_down_body_->size();
     if (cur_pts <= 5) {
@@ -75,18 +101,21 @@ void fast_lio2::Run(){
     point_selected_surf_.resize(cur_pts, true);
     plane_coef_.resize(cur_pts, Vec4f::Zero());
 
-    if(ikd_tree_.Root_Node == nullptr){
-      if(cur_pts > 5){
-        ikd_tree_.set_downsample_param(filter_size_map_min_);
-        scan_down_world_->resize(cur_pts);
-        for(int i = 0; i < cur_pts; i++)
-        {
-          PointBodyToWorld(&(scan_down_body_->points[i]), &(scan_down_world_->points[i]));
+    if(nn_type_ == nearest_neighbor_type::IKD_TREE)
+    {
+      if(ikd_tree_.Root_Node == nullptr){
+        if(cur_pts > 5){
+          ikd_tree_.set_downsample_param(filter_size_map_min_);
+          scan_down_world_->resize(cur_pts);
+          for(int i = 0; i < cur_pts; i++)
+          {
+            PointBodyToWorld(&(scan_down_body_->points[i]), &(scan_down_world_->points[i]));
+          }
+          ikd_tree_.Build(scan_down_world_->points);
         }
-        ikd_tree_.Build(scan_down_world_->points);
+        return_flag = true;
+        return;
       }
-      return_flag = true;
-      return;
     }
 
     // ICP and iterated Kalman filter update
@@ -97,8 +126,8 @@ void fast_lio2::Run(){
     kf_.update_iterated_dyn_share_modified(LASER_POINT_COV, solve_H_time);
     // save the state
     state_point_ = kf_.get_x();
-    //    euler_cur_ = SO3ToEuler(state_point_.rot);
-//    pos_lidar_ = state_point_.pos + state_point_.rot * state_point_.offset_T_L_I;
+//    euler_cur_ = SO3ToEuler(state_point_.rot);
+    pos_lidar_ = state_point_.pos + state_point_.rot * state_point_.offset_T_L_I;
     //        },"IEKF Solve and Update");
   },  "Process Time Per Scan:");
 
@@ -107,6 +136,14 @@ void fast_lio2::Run(){
   }
   // update local map
   Timer::Evaluate([&, this]() { MapIncremental(); }, "    Incremental Mapping");
+
+  //  LOG(INFO) << "[ mapping ]: In num: " << scan_undistort_->points.size() << " down_sample " << cur_pts;
+
+  //  if(nn_type_ == nearest_neighbor_type::IKD_TREE){
+  //    LOG(INFO) << " Kdtree size num: " << ikd_tree_.size() << " effect feat num : " << effect_feat_num_;
+  //  } else if(nn_type_ == nearest_neighbor_type::IVOX){
+  //    LOG(INFO) << " Map grid num: " << ivox_->NumValidGrids() << " effect feat num : " << effect_feat_num_;
+  //  }
 
   // publish or save map pcd
   if (run_in_offline_) {
@@ -138,9 +175,164 @@ void fast_lio2::Run(){
   frame_num_++;
 }
 
+// callbacks of lidar and imu
+void lio::StandardPCLCallBack(const sensor_msgs::PointCloud2::ConstPtr &msg) {
+  mtx_buffer_.lock();
+  Timer::Evaluate(
+      [&, this]() {
+        scan_count_++;
+        if (msg->header.stamp.toSec() < last_timestamp_lidar_) {
+          LOG(ERROR) << "lidar loop back, clear buffer";
+          lidar_buffer_.clear();
+        }
+
+        PointCloudType::Ptr ptr(new PointCloudType());
+        preprocess_->Process(msg, ptr);
+        lidar_buffer_.push_back(ptr);
+        time_buffer_.push_back(msg->header.stamp.toSec());
+        last_timestamp_lidar_ = msg->header.stamp.toSec();
+      },
+      "Preprocess (Standard)");
+  mtx_buffer_.unlock();
+}
+
+void lio::LivoxPCLCallBack(const livox_ros_driver::CustomMsg::ConstPtr &msg) {
+  mtx_buffer_.lock();
+  Timer::Evaluate(
+      [&, this]() {
+        scan_count_++;
+        if (msg->header.stamp.toSec() < last_timestamp_lidar_) {
+          LOG(WARNING) << "lidar loop back, clear buffer";
+          lidar_buffer_.clear();
+        }
+
+        last_timestamp_lidar_ = msg->header.stamp.toSec();
+
+        if (!time_sync_en_ && abs(last_timestamp_imu_ - last_timestamp_lidar_) > 10.0 && !imu_buffer_.empty() &&
+            !lidar_buffer_.empty()) {
+          LOG(INFO) << "IMU and LiDAR not Synced, IMU time: " << last_timestamp_imu_
+                    << ", lidar header time: " << last_timestamp_lidar_;
+        }
+
+        if (time_sync_en_ && !timediff_set_flg_ && abs(last_timestamp_lidar_ - last_timestamp_imu_) > 1 &&
+            !imu_buffer_.empty()) {
+          timediff_set_flg_ = true;
+          timediff_lidar_wrt_imu_ = last_timestamp_lidar_ + 0.1 - last_timestamp_imu_;
+          LOG(INFO) << "Self sync IMU and LiDAR, time diff is " << timediff_lidar_wrt_imu_;
+        }
+
+        PointCloudType::Ptr ptr(new PointCloudType());
+        preprocess_->Process(msg, ptr);
+        lidar_buffer_.emplace_back(ptr);
+        time_buffer_.emplace_back(last_timestamp_lidar_);
+      },
+      "Preprocess (Livox)");
+
+  mtx_buffer_.unlock();
+}
+
+void lio::IMUCallBack(const sensor_msgs::Imu::ConstPtr &msg_in) {
+  publish_count_++;
+  sensor_msgs::Imu::Ptr msg(new sensor_msgs::Imu(*msg_in));
+
+  if (abs(timediff_lidar_wrt_imu_) > 0.1 && time_sync_en_) {
+    msg->header.stamp = ros::Time().fromSec(timediff_lidar_wrt_imu_ + msg_in->header.stamp.toSec());
+  }
+
+  double timestamp = msg->header.stamp.toSec();
+
+  mtx_buffer_.lock();
+  if (timestamp < last_timestamp_imu_) {
+    LOG(WARNING) << "imu loop back, clear buffer";
+    imu_buffer_.clear();
+  }
+
+  last_timestamp_imu_ = timestamp;
+  imu_buffer_.emplace_back(msg);
+  mtx_buffer_.unlock();
+}
+
+// sync lidar with imu
+bool lio::SyncPackages() {
+  if (lidar_buffer_.empty() || imu_buffer_.empty()) {
+    return false;
+  }
+
+  /*** push a lidar scan ***/
+  if (!lidar_pushed_) {
+    measures_.lidar_ = lidar_buffer_.front();
+    measures_.lidar_beg_time_ = time_buffer_.front();
+
+    if (measures_.lidar_->points.size() <= 1) {
+      LOG(WARNING) << "Too few input point cloud!";
+      lidar_end_time_ = measures_.lidar_beg_time_ + lidar_mean_scantime_;
+    } else if (measures_.lidar_->points.back().curvature / double(1000) < 0.5 * lidar_mean_scantime_) {
+      lidar_end_time_ = measures_.lidar_beg_time_ + lidar_mean_scantime_;
+    } else {
+      scan_num_++;
+      lidar_end_time_ = measures_.lidar_beg_time_ + measures_.lidar_->points.back().curvature / double(1000);
+      lidar_mean_scantime_ +=
+          (measures_.lidar_->points.back().curvature / double(1000) - lidar_mean_scantime_) / scan_num_;
+    }
+
+    measures_.lidar_end_time_ = lidar_end_time_;
+    lidar_pushed_ = true;
+  }
+
+  if (last_timestamp_imu_ < lidar_end_time_) {
+    return false;
+  }
+
+  /*** push imu_ data, and pop from imu_ buffer ***/
+  double imu_time = imu_buffer_.front()->header.stamp.toSec();
+  measures_.imu_.clear();
+  while ((!imu_buffer_.empty()) && (imu_time < lidar_end_time_)) {
+    imu_time = imu_buffer_.front()->header.stamp.toSec();
+    if (imu_time > lidar_end_time_) break;
+    measures_.imu_.push_back(imu_buffer_.front());
+    imu_buffer_.pop_front();
+  }
+
+  lidar_buffer_.pop_front();
+  time_buffer_.pop_front();
+  lidar_pushed_ = false;
+  return true;
+}
+
+// get quantile
+float lio::getQuantile(vector<float>& data, float quantile) {
+  size_t n = data.size();
+  size_t index = static_cast<size_t>(quantile * (n - 1));
+  nth_element(data.begin(), data.begin() + index, data.end());
+  return data[index];
+}
+
+void lio::detectOutliers(vector<float>& data, vector<float>& normal_data, std::vector<bool> &point_selected_surf) {
+  vector<float> sorted_data = data;
+  sorted_data.erase(remove(sorted_data.begin(), sorted_data.end(), -1.0), sorted_data.end());
+  sort(sorted_data.begin(), sorted_data.end());
+
+  // 计算四分位数
+  float Q1 = getQuantile(sorted_data, 0.1);
+  float Q3 = getQuantile(sorted_data, 0.9);
+  float IQR = Q3 - Q1;
+
+  // 异常值的范围
+  float lower_bound = Q1 - 1.5 * IQR;
+  float upper_bound = Q3 + 1.5 * IQR;
+  // 将数据分类为正常值和异常值
+  for (int i = 0; i < data.size(); i++) {
+    //    if (data[i] < lower_bound || data[i] > upper_bound) {
+    if (data[i] < Q1 || data[i] > Q3) {
+      //      point_selected_surf[i] = false;
+    } else {
+      normal_data.push_back(data[i]);
+    }
+  }
+}
 
 // interface of mtk, customized observation model
-void fast_lio2::ObsModel(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_data){
+void lio::ObsModel(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_data){
   unsigned long cnt_pts = scan_down_body_->size();
 
   std::vector<size_t> index(cnt_pts);
@@ -151,6 +343,14 @@ void fast_lio2::ObsModel(state_ikfom &s, esekfom::dyn_share_datastruct<double> &
   Timer::Evaluate([&, this](){
     auto R_wl = (s.rot * s.offset_R_L_I).cast<float>();
     auto t_wl = (s.rot * s.offset_T_L_I + s.pos).cast<float>();
+
+    //    Vec3f p_body;
+    //    p_body.x() = s.pos.x();
+    //    p_body.y() = s.pos.y();
+    //    p_body.z() = s.pos.z();
+    //    if(scan_count_ % 100 == 0){
+    //      Number::Record(p_body.stableNorm(), "residuals_scan_"+to_string(scan_count_));
+    //    }
 
     /** closest surface search and residual computation **/
     std::for_each(std::execution::par_unseq, index.begin(), index.end(), [&](const size_t &i) {
@@ -166,9 +366,16 @@ void fast_lio2::ObsModel(state_ikfom &s, esekfom::dyn_share_datastruct<double> &
       auto &points_near = nearest_points_[i];
       if (ekfom_data.converge) {
         /** Find the closest surfaces in the map **/
-        ikd_tree_.Nearest_Search(point_world, NUM_MATCH_POINTS, points_near, pointSearchSqDis);
-        point_selected_surf_[i] = points_near.size() >= NUM_MATCH_POINTS && pointSearchSqDis[NUM_MATCH_POINTS - 1] <= 5.0;
-
+        if(nn_type_ == nearest_neighbor_type::IKD_TREE){
+          ikd_tree_.Nearest_Search(point_world, NUM_MATCH_POINTS, points_near, pointSearchSqDis);
+          point_selected_surf_[i] = points_near.size() >= NUM_MATCH_POINTS && pointSearchSqDis[NUM_MATCH_POINTS - 1] <= 5.0;
+        } else if(nn_type_ == nearest_neighbor_type::IVOX){
+          ivox_->GetClosestPoint(point_world, points_near, NUM_MATCH_POINTS);
+          point_selected_surf_[i] = points_near.size() >= MIN_NUM_MATCH_POINTS;
+        } else{
+          ROS_ERROR("nearest neighbor type is error!");
+          return ;
+        }
         if (point_selected_surf_[i]) {
           point_selected_surf_[i] = esti_plane(plane_coef_[i], points_near, ESTI_PLANE_THRESHOLD_);
         }
@@ -255,7 +462,7 @@ void fast_lio2::ObsModel(state_ikfom &s, esekfom::dyn_share_datastruct<double> &
 }
 
 // debug save / show
-void fast_lio2::PublishPath(const ros::Publisher& pub_path) {
+void lio::PublishPath(const ros::Publisher& pub_path) {
   SetPoseStamp(msg_body_pose_);
   msg_body_pose_.header.stamp = ros::Time().fromSec(lidar_end_time_);
   msg_body_pose_.header.frame_id = "camera_init";
@@ -267,7 +474,7 @@ void fast_lio2::PublishPath(const ros::Publisher& pub_path) {
   }
 }
 
-void fast_lio2::PublishOdometry(const ros::Publisher &pub_odom_aft_mapped) {
+void lio::PublishOdometry(const ros::Publisher &pub_odom_aft_mapped) {
   odom_aft_mapped_.header.frame_id = "camera_init";
   odom_aft_mapped_.child_frame_id = "body";
   odom_aft_mapped_.header.stamp = ros::Time().fromSec(lidar_end_time_);  // ros::Time().fromSec(lidar_end_time_);
@@ -297,7 +504,7 @@ void fast_lio2::PublishOdometry(const ros::Publisher &pub_odom_aft_mapped) {
   br.sendTransform(tf::StampedTransform(transform, odom_aft_mapped_.header.stamp, tf_world_frame_, tf_imu_frame_));
 }
 
-void fast_lio2::PublishFrameWorld() {
+void lio::PublishFrameWorld() {
   if (!(!run_in_offline_ && scan_pub_en_) && !pcd_save_en_) {
     return;
   }
@@ -324,7 +531,7 @@ void fast_lio2::PublishFrameWorld() {
   
 }
 
-void fast_lio2::PublishFrameBody() {
+void lio::PublishFrameBody() {
   unsigned long size = scan_undistort_->points.size();
   PointCloudType::Ptr laser_cloud_imu_body(new PointCloudType(size, 1));
 
@@ -339,7 +546,7 @@ void fast_lio2::PublishFrameBody() {
   pub_laser_cloud_body_.publish(laserCloudmsg);
 }
 
-void fast_lio2::PublishFrameEffectWorld(const ros::Publisher &pub_laser_cloud_effect_world) {
+void lio::PublishFrameEffectWorld(const ros::Publisher &pub_laser_cloud_effect_world) {
   unsigned long size = corr_pts_.size();
   PointCloudType::Ptr laser_cloud(new PointCloudType(size, 1));
 
@@ -353,7 +560,7 @@ void fast_lio2::PublishFrameEffectWorld(const ros::Publisher &pub_laser_cloud_ef
   pub_laser_cloud_effect_world.publish(laserCloudmsg);
 }
 
-void fast_lio2::SaveTrajectory(const std::string &traj_file) {
+void lio::SaveTrajectory(const std::string &traj_file) {
   std::ofstream ofs;
   ofs.open(traj_file, std::ios::out);
   if (!ofs.is_open()) {
@@ -372,7 +579,7 @@ void fast_lio2::SaveTrajectory(const std::string &traj_file) {
   ofs.close();
 }
 
-void fast_lio2::Finish() {
+void lio::Finish() {
   /**************** save map ****************/
   /* 1. make sure you have enough memories **/
   /* 2. pcd save will largely influence the real-time performances **/
@@ -389,7 +596,7 @@ void fast_lio2::Finish() {
 
 // private
 template <typename T>
-void fast_lio2::SetPoseStamp(T &out) {
+void lio::SetPoseStamp(T &out) {
   out.pose.position.x = state_point_.pos(0);
   out.pose.position.y = state_point_.pos(1);
   out.pose.position.z = state_point_.pos(2);
@@ -399,10 +606,10 @@ void fast_lio2::SetPoseStamp(T &out) {
   out.pose.orientation.w = state_point_.rot.coeffs()[3];
 }
 
-void fast_lio2::PointBodyToWorld(const PointType *pi, PointType *const po) {
+void lio::PointBodyToWorld(const PointType *pi, PointType *const po) {
   Vec3d p_body(pi->x, pi->y, pi->z);
   Vec3d p_global(state_point_.rot * (state_point_.offset_R_L_I * p_body + state_point_.offset_T_L_I) +
-                 state_point_.pos);
+                       state_point_.pos);
 
   po->x = p_global(0);
   po->y = p_global(1);
@@ -410,10 +617,10 @@ void fast_lio2::PointBodyToWorld(const PointType *pi, PointType *const po) {
   po->intensity = pi->intensity;
 }
 
-void fast_lio2::PointBodyToWorld(const Vec3f &pi, PointType *const po) {
+void lio::PointBodyToWorld(const Vec3f &pi, PointType *const po) {
   Vec3d p_body(pi.x(), pi.y(), pi.z());
   Vec3d p_global(state_point_.rot * (state_point_.offset_R_L_I * p_body + state_point_.offset_T_L_I) +
-                 state_point_.pos);
+                       state_point_.pos);
 
   po->x = p_global(0);
   po->y = p_global(1);
@@ -421,7 +628,7 @@ void fast_lio2::PointBodyToWorld(const Vec3f &pi, PointType *const po) {
   po->intensity = std::abs(po->z);
 }
 
-void fast_lio2::PointBodyLidarToIMU(PointType const *const pi, PointType *const po) {
+void lio::PointBodyLidarToIMU(PointType const *const pi, PointType *const po) {
   Vec3d p_body_lidar(pi->x, pi->y, pi->z);
   Vec3d p_body_imu(state_point_.offset_R_L_I * p_body_lidar + state_point_.offset_T_L_I);
 
@@ -432,11 +639,12 @@ void fast_lio2::PointBodyLidarToIMU(PointType const *const pi, PointType *const 
 }
 
 
-void fast_lio2::MapIncremental(){
+void lio::MapIncremental(){
   PointVector points_to_add;
   PointVector point_no_need_down_sample;
 
   unsigned long cur_pts = scan_down_body_->size();
+  //  Number::Record((unsigned long)cur_pts, "ori_point_size");
   points_to_add.reserve(cur_pts);
   point_no_need_down_sample.reserve(cur_pts);
 
@@ -512,11 +720,23 @@ void fast_lio2::MapIncremental(){
     pub_match_cloud_world_.publish(laserCloudmsg1);
   }
 
-  ikd_tree_.Add_Points(points_to_add, true);
-  ikd_tree_.Add_Points(point_no_need_down_sample, false);
+  //  Number::Record((unsigned long)points_to_add.size(), "add_point_size");
+  //  Number::Record((unsigned long)point_no_need_down_sample.size(), "no_need_ds_point_size");
+
+  if(nn_type_ == nearest_neighbor_type::IKD_TREE){
+    Timer::Evaluate([&, this](){
+      ikd_tree_.Add_Points(points_to_add, true);
+      ikd_tree_.Add_Points(point_no_need_down_sample, false);
+    },"    Ikd_Tree Add Points");
+  } else if(nn_type_ == nearest_neighbor_type::IVOX){
+    Timer::Evaluate([&, this]() {
+      ivox_->AddPoints(points_to_add);
+      ivox_->AddPoints(point_no_need_down_sample);
+    },"    IVox Add Points");
+  }
 }
 
-void fast_lio2::SubAndPubToROS(ros::NodeHandle &nh){
+void lio::SubAndPubToROS(ros::NodeHandle &nh){
   // ROS subscribe initialization
   std::string lidar_topic, imu_topic;
   nh.param<std::string>("common/lid_topic", lidar_topic, "/livox/lidar");
@@ -545,7 +765,7 @@ void fast_lio2::SubAndPubToROS(ros::NodeHandle &nh){
   pub_path_ = nh.advertise<nav_msgs::Path>("/path", 100000);
 }
 
-bool fast_lio2::InitParamsFromROS(ros::NodeHandle &nh){
+bool lio::InitParamsFromROS(ros::NodeHandle &nh){
   // get params from param server
   int lidar_type, nn_type, ivox_nearby_type;
   double gyr_cov, acc_cov, b_gyr_cov, b_acc_cov;
@@ -566,54 +786,89 @@ bool fast_lio2::InitParamsFromROS(ros::NodeHandle &nh){
   nh.param<float>("filter_size_map", filter_size_map_min_, 0.0);
   nh.param<double>("cube_side_length", cube_len_, 200);
   nh.param<float>("mapping/det_range", det_range_, 300.f);
-//  nh.param<double>("mapping/gyr_cov", gyr_cov, 0.1);
-//  nh.param<double>("mapping/acc_cov", acc_cov, 0.1);
-//  nh.param<double>("mapping/b_gyr_cov", b_gyr_cov, 0.0001);
-//  nh.param<double>("mapping/b_acc_cov", b_acc_cov, 0.0001);
-//  nh.param<double>("preprocess/blind", preprocess_->Blind(), 0.01);
-//  nh.param<float>("preprocess/time_scale", preprocess_->TimeScale(), 1e-3);
-//  nh.param<int>("preprocess/lidar_type", lidar_type, 1);
-//  nh.param<int>("preprocess/scan_line", preprocess_->NumScans(), 16);
-//  nh.param<int>("point_filter_num", preprocess_->PointFilterNum(), 2);
-//  nh.param<bool>("feature_extract_enable", preprocess_->FeatureEnabled(), false);
-//  nh.param<bool>("runtime_pos_log_enable", runtime_pos_log_, true);
+  nh.param<double>("mapping/gyr_cov", gyr_cov, 0.1);
+  nh.param<double>("mapping/acc_cov", acc_cov, 0.1);
+  nh.param<double>("mapping/b_gyr_cov", b_gyr_cov, 0.0001);
+  nh.param<double>("mapping/b_acc_cov", b_acc_cov, 0.0001);
+  nh.param<double>("preprocess/blind", preprocess_->Blind(), 0.01);
+  nh.param<float>("preprocess/time_scale", preprocess_->TimeScale(), 1e-3);
+  nh.param<int>("preprocess/lidar_type", lidar_type, 1);
+  nh.param<int>("preprocess/scan_line", preprocess_->NumScans(), 16);
+  nh.param<int>("point_filter_num", preprocess_->PointFilterNum(), 2);
+  nh.param<bool>("feature_extract_enable", preprocess_->FeatureEnabled(), false);
+  nh.param<bool>("runtime_pos_log_enable", runtime_pos_log_, true);
   nh.param<bool>("mapping/extrinsic_est_en", extrinsic_est_en_, true);
-//  nh.param<bool>("pcd_save/pcd_save_en", pcd_save_en_, false);
-//  nh.param<int>("pcd_save/interval", pcd_save_interval_, -1);
-//  nh.param<std::vector<double>>("mapping/extrinsic_T", extrinT_, std::vector<double>());
-//  nh.param<std::vector<double>>("mapping/extrinsic_R", extrinR_, std::vector<double>());
+  nh.param<bool>("pcd_save/pcd_save_en", pcd_save_en_, false);
+  nh.param<int>("pcd_save/interval", pcd_save_interval_, -1);
+  nh.param<std::vector<double>>("mapping/extrinsic_T", extrinT_, std::vector<double>());
+  nh.param<std::vector<double>>("mapping/extrinsic_R", extrinR_, std::vector<double>());
 
+  nh.param<int>("nearest_neighbor_type", nn_type, 1);
 
+  nh.param<float>("ivox_grid_resolution", ivox_options_.resolution_, 0.2);
+  nh.param<int>("ivox_nearby_type", ivox_nearby_type, 18);
 
   nh.param<float>("esti_plane_threshold", ESTI_PLANE_THRESHOLD_, 0.1);
 
-//  LOG(INFO) << "lidar_type " << lidar_type;
-//  if (lidar_type == 1) {
-//    preprocess_->SetLidarType(LidarType::AVIA);
-//    LOG(INFO) << "Using AVIA Lidar";
-//  } else if (lidar_type == 2) {
-//    preprocess_->SetLidarType(LidarType::VELO32);
-//    LOG(INFO) << "Using Velodyne 32 Lidar";
-//  } else if (lidar_type == 3) {
-//    preprocess_->SetLidarType(LidarType::OUST64);
-//    LOG(INFO) << "Using OUST 64 Lidar";
-//  } else {
-//    LOG(WARNING) << "unknown lidar_type";
-//    return false;
-//  }
+  LOG(INFO) << "lidar_type " << lidar_type;
+  if (lidar_type == 1) {
+    preprocess_->SetLidarType(LidarType::AVIA);
+    LOG(INFO) << "Using AVIA Lidar";
+  } else if (lidar_type == 2) {
+    preprocess_->SetLidarType(LidarType::VELO32);
+    LOG(INFO) << "Using Velodyne 32 Lidar";
+  } else if (lidar_type == 3) {
+    preprocess_->SetLidarType(LidarType::OUST64);
+    LOG(INFO) << "Using OUST 64 Lidar";
+  } else {
+    LOG(WARNING) << "unknown lidar_type";
+    return false;
+  }
+
+  if (ivox_nearby_type == 0) {
+    ivox_options_.nearby_type_ = IVoxType::NearbyType::CENTER;
+  } else if (ivox_nearby_type == 6) {
+    ivox_options_.nearby_type_ = IVoxType::NearbyType::NEARBY6;
+  } else if (ivox_nearby_type == 18) {
+    ivox_options_.nearby_type_ = IVoxType::NearbyType::NEARBY18;
+  } else if (ivox_nearby_type == 26) {
+    ivox_options_.nearby_type_ = IVoxType::NearbyType::NEARBY26;
+  } else {
+    LOG(WARNING) << "unknown ivox_nearby_type, use NEARBY18";
+    ivox_options_.nearby_type_ = IVoxType::NearbyType::NEARBY18;
+  }
+
+  if (nn_type == 1) {
+    nn_type_ = nearest_neighbor_type::IKD_TREE;
+    LOG(INFO) << "Using IKD_TREE as nearest neighbor type";
+  } else if (nn_type == 2) {
+    nn_type_ = nearest_neighbor_type::IVOX;
+    LOG(INFO) << "Using IVOX as nearest neighbor type";
+  } else {
+    LOG(WARNING) << "unknown nearest neighbor type";
+    return false;
+  }
 
   voxel_scan_.setLeafSize(filter_size_surf_min_, filter_size_surf_min_, filter_size_surf_min_);
 
-//  Vec3d lidar_T_wrt_IMU = VecFromArray<double>(extrinT_);
-//  Mat3d lidar_R_wrt_IMU = MatFromArray<double>(extrinR_);
-//
-//  p_imu_->SetExtrinsic(lidar_T_wrt_IMU, lidar_R_wrt_IMU);
-//  p_imu_->SetGyrCov(Vec3d(gyr_cov, gyr_cov, gyr_cov));
-//  p_imu_->SetAccCov(Vec3d(acc_cov, acc_cov, acc_cov));
-//  p_imu_->SetGyrBiasCov(Vec3d(b_gyr_cov, b_gyr_cov, b_gyr_cov));
-//  p_imu_->SetAccBiasCov(Vec3d(b_acc_cov, b_acc_cov, b_acc_cov));
+  Vec3d lidar_T_wrt_IMU = VecFromArray<double>(extrinT_);
+  Mat3d lidar_R_wrt_IMU = MatFromArray<double>(extrinR_);
+
+  p_imu_->SetExtrinsic(lidar_T_wrt_IMU, lidar_R_wrt_IMU);
+  p_imu_->SetGyrCov(Vec3d(gyr_cov, gyr_cov, gyr_cov));
+  p_imu_->SetAccCov(Vec3d(acc_cov, acc_cov, acc_cov));
+  p_imu_->SetGyrBiasCov(Vec3d(b_gyr_cov, b_gyr_cov, b_gyr_cov));
+  p_imu_->SetAccBiasCov(Vec3d(b_acc_cov, b_acc_cov, b_acc_cov));
   return true;
 }
 
+bool lio::LoadParamsFromYAML(const std::string &yaml){
+  return true;
+}
+
+void lio::PrintState(const state_ikfom &s){
+  LOG(INFO) << "state r: " << s.rot.coeffs().transpose() << ", t: " << s.pos.transpose()
+            << ", off r: " << s.offset_R_L_I.coeffs().transpose() << ", t: " << s.offset_T_L_I.transpose();
+}
 
 } // namespace simple_lio

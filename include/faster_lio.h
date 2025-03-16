@@ -56,7 +56,6 @@ private:
   void PointBodyToWorld(const Vec3f &pi, PointType *const po);
   CloudPtr PointCloudLidarToIMU(CloudPtr &pi);
 
-private:
   esekfom::esekf<state_ikfom, 12, input_ikfom> kf_; // esekf
   state_ikfom state_point_;
 
