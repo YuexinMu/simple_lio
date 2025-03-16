@@ -1,9 +1,9 @@
 add_library(${PROJECT_NAME}
-        faster_lio.cpp
         lio_base.cpp
-        lio.cc
+        lio.cpp
+        faster_lio.cpp
+        fast_lio2.cpp
         common/pointcloud_preprocess.cpp
-#        common/imu_processing.cpp
         common/utils.cpp
         )
 
@@ -23,8 +23,3 @@ target_link_libraries(${PROJECT_NAME}
         )
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${PYTHON_INCLUDE_DIRS})
-
-add_executable(run_lio_mapping run_lio_mapping.cc)
-target_link_libraries(run_lio_mapping
-        ${PROJECT_NAME} gflags
-        )
