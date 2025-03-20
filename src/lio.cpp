@@ -418,7 +418,7 @@ void lio::ObsModel(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
   });
 }
 
-void lio::Finish() {
+void lio::Finish(std::string log_dir) {
   /**************** save path ****************/
   auto now = std::chrono::system_clock::now();
   std::time_t t = std::chrono::system_clock::to_time_t(now);
@@ -426,18 +426,9 @@ void lio::Finish() {
   std::ostringstream oss;
   oss << std::put_time(std::localtime(&t), "%Y-%m-%d_%H-%M-%S") << ".csv";
 
-  std::string log_dir = std::string(ROOT_DIR) + "log/" + oss.str();
-  std::filesystem::path log_path(log_dir);
-  // check the log path whether exist
-  if (!std::filesystem::exists(log_path)) {
-    // creat log path
-    if (!std::filesystem::create_directories(log_path)) {
-      std::cout << "Failed to create path: " << log_path << std::endl;
-    }
-  }
-
+  std::string log_name = log_dir + "/" + oss.str();
   Timer::PrintAll();
-  Timer::DumpIntoFile(log_dir);
+  Timer::DumpIntoFile(log_name);
 
   LOG(INFO) << "finish done";
 }
