@@ -59,6 +59,7 @@ bool lio::Init(ros::NodeHandle &nh) {
   p_imu_->SetGyrBiasCov(Vec3d(config_.b_gyr_cov, config_.b_gyr_cov, config_.b_gyr_cov));
   p_imu_->SetAccBiasCov(Vec3d(config_.b_acc_cov, config_.b_acc_cov, config_.b_acc_cov));
 
+  extrinsic_est_en_ = config_.extrinsic_est_en;
 
   if (config_.nearby_type == 0) {
     ivox_options_.nearby_type_ = IVoxType::NearbyType::CENTER;

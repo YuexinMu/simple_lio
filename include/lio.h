@@ -69,7 +69,7 @@ struct SimpleLioConfig {
 
   float resolution;
   int nearby_type;
-
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 };
 
 class lio{
@@ -185,7 +185,6 @@ private:
   state_ikfom state_point_;                          // ekf current state
   vect3 pos_lidar_;                                  // lidar position after eskf update
   bool extrinsic_est_en_ = true;
-
 };
 
 }  // namespace simple_lio
