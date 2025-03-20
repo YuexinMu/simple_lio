@@ -1,8 +1,5 @@
 add_library(${PROJECT_NAME}
-        lio_base.cpp
         lio.cpp
-        faster_lio.cpp
-        fast_lio2.cpp
         common/pointcloud_preprocess.cpp
         common/utils.cpp
         )

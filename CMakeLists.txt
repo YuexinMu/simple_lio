@@ -17,17 +17,7 @@ include(cmake/packages.cmake)
 
 add_subdirectory(src)
 
-add_executable(faster_lio_test test/faster_lio_test.cpp)
-target_link_libraries(faster_lio_test
+add_executable(run_lio_mapping test/run_lio_mapping.cc)
+target_link_libraries(run_lio_mapping
         ${PROJECT_NAME} gflags
         )
-
-add_executable(fast_lio2_test test/fast_lio2_test.cpp)
-target_link_libraries(fast_lio2_test
-        ${PROJECT_NAME} gflags
-        )
-
-#add_executable(run_lio_mapping test/run_lio_mapping.cc)
-#target_link_libraries(run_lio_mapping
-#        ${PROJECT_NAME} gflags
-#        )

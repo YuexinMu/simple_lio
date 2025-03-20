@@ -73,8 +73,8 @@ struct SimpleLioConfig {
 };
 
 class lio{
+EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
 public:
-  EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
   using IVoxType = ivox3d::IVox<3, ivox3d::IVoxNodeType::DEFAULT, PointType>;
 
   lio();
