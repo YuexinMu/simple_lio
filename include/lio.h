@@ -94,6 +94,7 @@ public:
   bool SyncPackages();
 
   void ObsModel(state_ikfom &state_ikf, esekfom::dyn_share_datastruct<double> &ekfom_data);
+  void Finish();
 
   // debug save / show
   void PublishFrameEffectWorld(const ros::Publisher &pub_laser_cloud_effect_world);

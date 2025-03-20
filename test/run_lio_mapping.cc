@@ -22,7 +22,7 @@ int main(int argc, char **argv) {
   signal(SIGINT, SigHandle);
 
   auto lio_mapping = std::make_shared<simple_lio::lio>();
-  lio_mapping->InitROS(nh);
+  lio_mapping->Init(nh);
 
   ros::AsyncSpinner spinner(32);
   spinner.start();

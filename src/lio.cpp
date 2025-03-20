@@ -4,6 +4,8 @@
 
 #include "lio.h"
 
+#include <filesystem>
+#include <ctime>
 #include <tf/transform_broadcaster.h>
 
 namespace simple_lio{
@@ -132,15 +134,11 @@ void lio::Run(){
 
     // down_sample
     if(nn_type_ == nearest_neighbor_type::IKD_TREE){
-      //      Timer::Evaluate([&, this]() {
       voxel_scan_.setInputCloud(scan_undistort_);
       voxel_scan_.filter(*scan_down_body_);
-      //      },"Downsample PointCloud");
     } else if(nn_type_ == nearest_neighbor_type::IVOX){
-      //      Timer::Evaluate([&, this]() {
       voxel_scan_.setInputCloud(scan_undistort_);
       voxel_scan_.filter(*scan_down_body_);
-      //      },"Downsample PointCloud");
     }
 
     unsigned long cur_pts = scan_down_body_->size();
@@ -178,7 +176,7 @@ void lio::Run(){
     // save the state
     state_point_ = kf_.get_x();
     pos_lidar_ = state_point_.pos + state_point_.rot * state_point_.offset_T_L_I;
-  },  "Process Time Per Scan:");
+  },  "    Process Time Per Scan:");
 
   if(return_flag){
     return;
@@ -201,55 +199,47 @@ void lio::Run(){
 // callbacks of lidar and imu
 void lio::StandardPCLCallBack(const sensor_msgs::PointCloud2::ConstPtr &msg) {
   mtx_buffer_.lock();
-  Timer::Evaluate(
-      [&, this]() {
-        scan_count_++;
-        if (msg->header.stamp.toSec() < last_timestamp_lidar_) {
-          LOG(ERROR) << "lidar loop back, clear buffer";
-          lidar_buffer_.clear();
-        }
+  scan_count_++;
+  if (msg->header.stamp.toSec() < last_timestamp_lidar_) {
+    LOG(ERROR) << "lidar loop back, clear buffer";
+    lidar_buffer_.clear();
+  }
 
-        PointCloudType::Ptr ptr(new PointCloudType());
-        preprocess_->Process(msg, ptr);
-        lidar_buffer_.push_back(ptr);
-        time_buffer_.push_back(msg->header.stamp.toSec());
-        last_timestamp_lidar_ = msg->header.stamp.toSec();
-      },
-      "Preprocess (Standard)");
+  PointCloudType::Ptr ptr(new PointCloudType());
+  preprocess_->Process(msg, ptr);
+  lidar_buffer_.push_back(ptr);
+  time_buffer_.push_back(msg->header.stamp.toSec());
+  last_timestamp_lidar_ = msg->header.stamp.toSec();
   mtx_buffer_.unlock();
 }
 
 void lio::LivoxPCLCallBack(const livox_ros_driver::CustomMsg::ConstPtr &msg) {
   mtx_buffer_.lock();
-  Timer::Evaluate(
-      [&, this]() {
-        scan_count_++;
-        if (msg->header.stamp.toSec() < last_timestamp_lidar_) {
-          LOG(WARNING) << "lidar loop back, clear buffer";
-          lidar_buffer_.clear();
-        }
+  scan_count_++;
+  if (msg->header.stamp.toSec() < last_timestamp_lidar_) {
+    LOG(WARNING) << "lidar loop back, clear buffer";
+    lidar_buffer_.clear();
+  }
 
-        last_timestamp_lidar_ = msg->header.stamp.toSec();
+  last_timestamp_lidar_ = msg->header.stamp.toSec();
 
-        if (!config_.time_sync_en && abs(last_timestamp_imu_ - last_timestamp_lidar_) > 10.0 && !imu_buffer_.empty() &&
-            !lidar_buffer_.empty()) {
-          LOG(INFO) << "IMU and LiDAR not Synced, IMU time: " << last_timestamp_imu_
-                    << ", lidar header time: " << last_timestamp_lidar_;
-        }
+  if (!config_.time_sync_en && abs(last_timestamp_imu_ - last_timestamp_lidar_) > 10.0 && !imu_buffer_.empty() &&
+      !lidar_buffer_.empty()) {
+    LOG(INFO) << "IMU and LiDAR not Synced, IMU time: " << last_timestamp_imu_
+              << ", lidar header time: " << last_timestamp_lidar_;
+  }
 
-        if (config_.time_sync_en && !timediff_set_flg_ && abs(last_timestamp_lidar_ - last_timestamp_imu_) > 1 &&
-            !imu_buffer_.empty()) {
-          timediff_set_flg_ = true;
-          timediff_lidar_wrt_imu_ = last_timestamp_lidar_ + 0.1 - last_timestamp_imu_;
-          LOG(INFO) << "Self sync IMU and LiDAR, time diff is " << timediff_lidar_wrt_imu_;
-        }
+  if (config_.time_sync_en && !timediff_set_flg_ && abs(last_timestamp_lidar_ - last_timestamp_imu_) > 1 &&
+      !imu_buffer_.empty()) {
+    timediff_set_flg_ = true;
+    timediff_lidar_wrt_imu_ = last_timestamp_lidar_ + 0.1 - last_timestamp_imu_;
+    LOG(INFO) << "Self sync IMU and LiDAR, time diff is " << timediff_lidar_wrt_imu_;
+  }
 
-        PointCloudType::Ptr ptr(new PointCloudType());
-        preprocess_->Process(msg, ptr);
-        lidar_buffer_.emplace_back(ptr);
-        time_buffer_.emplace_back(last_timestamp_lidar_);
-      },
-      "Preprocess (Livox)");
+  PointCloudType::Ptr ptr(new PointCloudType());
+  preprocess_->Process(msg, ptr);
+  lidar_buffer_.emplace_back(ptr);
+  time_buffer_.emplace_back(last_timestamp_lidar_);
 
   mtx_buffer_.unlock();
 }
@@ -331,53 +321,51 @@ void lio::ObsModel(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
     index[i] = i;
   }
 
-  Timer::Evaluate([&, this](){
-    auto R_wl = (s.rot * s.offset_R_L_I).cast<float>();
-    auto t_wl = (s.rot * s.offset_T_L_I + s.pos).cast<float>();
-    /** closest surface search and residual computation **/
-    std::for_each(std::execution::par_unseq, index.begin(), index.end(), [&](const size_t &i) {
-      PointType &point_body = scan_down_body_->points[i];
-      PointType &point_world = scan_down_world_->points[i];
+  auto R_wl = (s.rot * s.offset_R_L_I).cast<float>();
+  auto t_wl = (s.rot * s.offset_T_L_I + s.pos).cast<float>();
+  /** closest surface search and residual computation **/
+  std::for_each(std::execution::par_unseq, index.begin(), index.end(), [&](const size_t &i) {
+    PointType &point_body = scan_down_body_->points[i];
+    PointType &point_world = scan_down_world_->points[i];
 
-      /* transform to world frame */
-      Vec3f p_body = point_body.getVector3fMap();
-      point_world.getVector3fMap() = R_wl * p_body + t_wl;
-      point_world.intensity = point_body.intensity;
+    /* transform to world frame */
+    Vec3f p_body = point_body.getVector3fMap();
+    point_world.getVector3fMap() = R_wl * p_body + t_wl;
+    point_world.intensity = point_body.intensity;
 
-      vector<float> pointSearchSqDis(NUM_MATCH_POINTS);
-      auto &points_near = nearest_points_[i];
-      if (ekfom_data.converge) {
-        /** Find the closest surfaces in the map **/
-        if(nn_type_ == nearest_neighbor_type::IKD_TREE){
-          ikd_tree_.Nearest_Search(point_world, NUM_MATCH_POINTS, points_near, pointSearchSqDis);
-          point_selected_surf_[i] = points_near.size() >= NUM_MATCH_POINTS && pointSearchSqDis[NUM_MATCH_POINTS - 1] <= 5.0;
-        } else if(nn_type_ == nearest_neighbor_type::IVOX){
-          ivox_->GetClosestPoint(point_world, points_near, NUM_MATCH_POINTS);
-          point_selected_surf_[i] = points_near.size() >= MIN_NUM_MATCH_POINTS;
-        } else{
-          ROS_ERROR("nearest neighbor type is error!");
-          return ;
-        }
-        if (point_selected_surf_[i]) {
-          point_selected_surf_[i] = esti_plane(plane_coef_[i], points_near, config_.plane_threshold);
-        }
+    vector<float> pointSearchSqDis(NUM_MATCH_POINTS);
+    auto &points_near = nearest_points_[i];
+    if (ekfom_data.converge) {
+      /** Find the closest surfaces in the map **/
+      if(nn_type_ == nearest_neighbor_type::IKD_TREE){
+        ikd_tree_.Nearest_Search(point_world, NUM_MATCH_POINTS, points_near, pointSearchSqDis);
+        point_selected_surf_[i] = points_near.size() >= NUM_MATCH_POINTS && pointSearchSqDis[NUM_MATCH_POINTS - 1] <= 5.0;
+      } else if(nn_type_ == nearest_neighbor_type::IVOX){
+        ivox_->GetClosestPoint(point_world, points_near, NUM_MATCH_POINTS);
+        point_selected_surf_[i] = points_near.size() >= MIN_NUM_MATCH_POINTS;
+      } else{
+        ROS_ERROR("nearest neighbor type is error!");
+        return ;
       }
-
       if (point_selected_surf_[i]) {
-        auto temp = point_world.getVector4fMap();
-        temp[3] = 1.0;
-        float pd2 = plane_coef_[i].dot(temp);
-
-        bool valid_corr = p_body.norm() > 81 * pd2 * pd2;
-        if (valid_corr) {
-          point_selected_surf_[i] = true;
-          residuals_[i] = pd2;
-        } else{
-          point_selected_surf_[i] = false;
-        }
+        point_selected_surf_[i] = esti_plane(plane_coef_[i], points_near, config_.plane_threshold);
       }
-    });
-  },"    ObsModel (Lidar Match)");
+    }
+
+    if (point_selected_surf_[i]) {
+      auto temp = point_world.getVector4fMap();
+      temp[3] = 1.0;
+      float pd2 = plane_coef_[i].dot(temp);
+
+      bool valid_corr = p_body.norm() > 81 * pd2 * pd2;
+      if (valid_corr) {
+        point_selected_surf_[i] = true;
+        residuals_[i] = pd2;
+      } else{
+        point_selected_surf_[i] = false;
+      }
+    }
+  });
   effect_feat_num_ = 0;
   corr_pts_.resize(cnt_pts);
   corr_norm_.resize(cnt_pts);
@@ -392,45 +380,66 @@ void lio::ObsModel(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
   corr_pts_.resize(effect_feat_num_);
   corr_norm_.resize(effect_feat_num_);
 
-  Timer::Evaluate(
-      [&, this]() {
-        /*** Computation of Measurement Jacobian matrix H and measurements vector ***/
-        ekfom_data.h_x = Eigen::MatrixXd::Zero(effect_feat_num_, 12);  // 23
-        ekfom_data.h.resize(effect_feat_num_);
+  /*** Computation of Measurement Jacobian matrix H and measurements vector ***/
+  ekfom_data.h_x = Eigen::MatrixXd::Zero(effect_feat_num_, 12);  // 23
+  ekfom_data.h.resize(effect_feat_num_);
 
-        index.resize(effect_feat_num_);
-        const Mat3f off_R = s.offset_R_L_I.toRotationMatrix().cast<float>();
-        const Vec3f off_t = s.offset_T_L_I.cast<float>();
-        const Mat3f Rt = s.rot.toRotationMatrix().transpose().cast<float>();
+  index.resize(effect_feat_num_);
+  const Mat3f off_R = s.offset_R_L_I.toRotationMatrix().cast<float>();
+  const Vec3f off_t = s.offset_T_L_I.cast<float>();
+  const Mat3f Rt = s.rot.toRotationMatrix().transpose().cast<float>();
 
-        std::for_each(std::execution::par_unseq, index.begin(), index.end(), [&](const size_t &i) {
-          // have be is lidar frame pose
-          Vec3f point_this_be = corr_pts_[i].head<3>();
-          Mat3f point_be_crossmat = SKEW_SYM_MATRIX(point_this_be);
-          // haven't be is imu frame pose
-          Vec3f point_this = off_R * point_this_be + off_t;
-          Mat3f point_crossmat = SKEW_SYM_MATRIX(point_this);
+  std::for_each(std::execution::par_unseq, index.begin(), index.end(), [&](const size_t &i) {
+    // have be is lidar frame pose
+    Vec3f point_this_be = corr_pts_[i].head<3>();
+    Mat3f point_be_crossmat = SKEW_SYM_MATRIX(point_this_be);
+    // haven't be is imu frame pose
+    Vec3f point_this = off_R * point_this_be + off_t;
+    Mat3f point_crossmat = SKEW_SYM_MATRIX(point_this);
 
-          /*** get the normal vector of closest surface/corner ***/
-          Vec3f norm_vec = corr_norm_[i].head<3>();
+    /*** get the normal vector of closest surface/corner ***/
+    Vec3f norm_vec = corr_norm_[i].head<3>();
 
-          /*** calculate the Measurement Jacobian matrix H ***/
-          Vec3f C(Rt * norm_vec);
-          Vec3f A(point_crossmat * C);
+    /*** calculate the Measurement Jacobian matrix H ***/
+    Vec3f C(Rt * norm_vec);
+    Vec3f A(point_crossmat * C);
 
-          if (extrinsic_est_en_) {
-            Vec3f B(point_be_crossmat * off_R.transpose() * C);
-            ekfom_data.h_x.block<1, 12>(i, 0) << norm_vec[0], norm_vec[1], norm_vec[2], A[0], A[1], A[2], B[0],
-                B[1], B[2], C[0], C[1], C[2];
-          } else {
-            ekfom_data.h_x.block<1, 12>(i, 0) << norm_vec[0], norm_vec[1], norm_vec[2], A[0], A[1], A[2], 0.0,
-                0.0, 0.0, 0.0, 0.0, 0.0;
-          }
+    if (extrinsic_est_en_) {
+      Vec3f B(point_be_crossmat * off_R.transpose() * C);
+      ekfom_data.h_x.block<1, 12>(i, 0) << norm_vec[0], norm_vec[1], norm_vec[2], A[0], A[1], A[2], B[0],
+          B[1], B[2], C[0], C[1], C[2];
+    } else {
+      ekfom_data.h_x.block<1, 12>(i, 0) << norm_vec[0], norm_vec[1], norm_vec[2], A[0], A[1], A[2], 0.0,
+          0.0, 0.0, 0.0, 0.0, 0.0;
+    }
 
-          /*** Measurement: distance to the closest surface/corner ***/
-          ekfom_data.h(i) = -corr_pts_[i][3];
-        });
-      },"    ObsModel (IEKF Build Jacobian)");
+    /*** Measurement: distance to the closest surface/corner ***/
+    ekfom_data.h(i) = -corr_pts_[i][3];
+  });
+}
+
+void lio::Finish() {
+  /**************** save path ****************/
+  auto now = std::chrono::system_clock::now();
+  std::time_t t = std::chrono::system_clock::to_time_t(now);
+
+  std::ostringstream oss;
+  oss << std::put_time(std::localtime(&t), "%Y-%m-%d_%H-%M-%S") << ".csv";
+
+  std::string log_dir = std::string(ROOT_DIR) + "log/" + oss.str();
+  std::filesystem::path log_path(log_dir);
+  // check the log path whether exist
+  if (!std::filesystem::exists(log_path)) {
+    // creat log path
+    if (!std::filesystem::create_directories(log_path)) {
+      std::cout << "Failed to create path: " << log_path << std::endl;
+    }
+  }
+
+  Timer::PrintAll();
+  Timer::DumpIntoFile(log_dir);
+
+  LOG(INFO) << "finish done";
 }
 
 template <typename T>
@@ -604,15 +613,11 @@ void lio::MapIncremental(){
   });
 
   if(nn_type_ == nearest_neighbor_type::IKD_TREE){
-    Timer::Evaluate([&, this](){
-      ikd_tree_.Add_Points(points_to_add, true);
-      ikd_tree_.Add_Points(point_no_need_down_sample, false);
-    },"    Ikd_Tree Add Points");
+    ikd_tree_.Add_Points(points_to_add, true);
+    ikd_tree_.Add_Points(point_no_need_down_sample, false);
   } else if(nn_type_ == nearest_neighbor_type::IVOX){
-    Timer::Evaluate([&, this]() {
-      ivox_->AddPoints(points_to_add);
-      ivox_->AddPoints(point_no_need_down_sample);
-    },"    IVox Add Points");
+    ivox_->AddPoints(points_to_add);
+    ivox_->AddPoints(point_no_need_down_sample);
   }
 }
 
