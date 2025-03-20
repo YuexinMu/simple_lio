@@ -176,17 +176,12 @@ void lio::Run(){
       }
     }
 
-    // ICP and iterated Kalman filter update
-    //    Timer::Evaluate([&, this]() {
-    // iterated state estimation
     double solve_H_time = 0;
     // update the observation model, will call nn and point-to-plane residual computation
     kf_.update_iterated_dyn_share_modified(LASER_POINT_COV, solve_H_time);
     // save the state
     state_point_ = kf_.get_x();
-//    euler_cur_ = SO3ToEuler(state_point_.rot);
     pos_lidar_ = state_point_.pos + state_point_.rot * state_point_.offset_T_L_I;
-    //        },"IEKF Solve and Update");
   },  "Process Time Per Scan:");
 
   if(return_flag){
@@ -194,41 +189,6 @@ void lio::Run(){
   }
   // update local map
   Timer::Evaluate([&, this]() { MapIncremental(); }, "    Incremental Mapping");
-
-  //  LOG(INFO) << "[ mapping ]: In num: " << scan_undistort_->points.size() << " down_sample " << cur_pts;
-
-  //  if(nn_type_ == nearest_neighbor_type::IKD_TREE){
-  //    LOG(INFO) << " Kdtree size num: " << ikd_tree_.size() << " effect feat num : " << effect_feat_num_;
-  //  } else if(nn_type_ == nearest_neighbor_type::IVOX){
-  //    LOG(INFO) << " Map grid num: " << ivox_->NumValidGrids() << " effect feat num : " << effect_feat_num_;
-  //  }
-
-  // publish or save map pcd
-//  if (run_in_offline_) {
-//    if (pcd_save_en_) {
-//      PublishFrameWorld();
-//    }
-//    if (traj_save_en_) {
-//      PublishPath(pub_path_);
-//    }
-//  } else {
-//    if (pub_odom_aft_mapped_) {
-//      PublishOdometry(pub_odom_aft_mapped_);
-//    }
-//    if (path_pub_en_ || traj_save_en_) {
-//      PublishPath(pub_path_);
-//    }
-//    if (scan_pub_en_ || pcd_save_en_) {
-//      PublishFrameWorld();
-//    }
-//    if (scan_pub_en_ && scan_body_pub_en_) {
-//      PublishFrameBody();
-//    }
-//    if (scan_pub_en_ && scan_effect_pub_en_) {
-//      PublishFrameEffectWorld(pub_laser_cloud_effect_world_);
-//    }
-//  }
-
 
   PublishPath(State2SE3(state_point_));
   PublishOdom(State2SE3(state_point_));
@@ -410,15 +370,6 @@ void lio::ObsModel(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
   Timer::Evaluate([&, this](){
     auto R_wl = (s.rot * s.offset_R_L_I).cast<float>();
     auto t_wl = (s.rot * s.offset_T_L_I + s.pos).cast<float>();
-
-    //    Vec3f p_body;
-    //    p_body.x() = s.pos.x();
-    //    p_body.y() = s.pos.y();
-    //    p_body.z() = s.pos.z();
-    //    if(scan_count_ % 100 == 0){
-    //      Number::Record(p_body.stableNorm(), "residuals_scan_"+to_string(scan_count_));
-    //    }
-
     /** closest surface search and residual computation **/
     std::for_each(std::execution::par_unseq, index.begin(), index.end(), [&](const size_t &i) {
       PointType &point_body = scan_down_body_->points[i];
@@ -463,11 +414,6 @@ void lio::ObsModel(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
       }
     });
   },"    ObsModel (Lidar Match)");
-
-  //  std::vector<float> normal;
-  //  detectOutliers(residuals_, normal, point_selected_surf_);
-  //  residuals_.swap(normal);
-
   effect_feat_num_ = 0;
   corr_pts_.resize(cnt_pts);
   corr_norm_.resize(cnt_pts);
@@ -476,11 +422,6 @@ void lio::ObsModel(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
       corr_norm_[effect_feat_num_] = plane_coef_[i];
       corr_pts_[effect_feat_num_] = scan_down_body_->points[i].getVector4fMap();
       corr_pts_[effect_feat_num_][3] = residuals_[i];
-
-      //      if(scan_count_ % 100 == 0){
-      //        Number::Record(residuals_[i], "residuals_scan_"+to_string(scan_count_));
-      //      }
-
       effect_feat_num_++;
     }
   }
@@ -625,30 +566,9 @@ void lio::SaveTrajectory(const std::string &traj_file) {
 
 void lio::Finish() {
   /**************** save map ****************/
-  /* 1. make sure you have enough memories **/
-//  /* 2. pcd save will largely influence the real-time performances **/
-//  if (pcl_wait_save_->size() > 0 && pcd_save_en_) {
-//    std::string file_name = std::string("scans.pcd");
-//    std::string all_points_dir(std::string(std::string(ROOT_DIR) + "PCD/") + file_name);
-//    pcl::PCDWriter pcd_writer;
-//    LOG(INFO) << "current scan saved to /PCD/" << file_name;
-//    pcd_writer.writeBinary(all_points_dir, *pcl_wait_save_);
-//  }
 
   LOG(INFO) << "finish done";
 }
-
-// private
-//template <typename T>
-//void lio::SetPoseStamp(T &out) {
-//  out.pose.position.x = state_point_.pos(0);
-//  out.pose.position.y = state_point_.pos(1);
-//  out.pose.position.z = state_point_.pos(2);
-//  out.pose.orientation.x = state_point_.rot.coeffs()[0];
-//  out.pose.orientation.y = state_point_.rot.coeffs()[1];
-//  out.pose.orientation.z = state_point_.rot.coeffs()[2];
-//  out.pose.orientation.w = state_point_.rot.coeffs()[3];
-//}
 
 void lio::PointBodyToWorld(const PointType *pi, PointType *const po) {
   Vec3d p_body(pi->x, pi->y, pi->z);
@@ -753,37 +673,6 @@ void lio::MapIncremental(){
     }
   });
 
-//  unsigned long size = points_to_add.size();
-//  if(size != 0){
-//    PointCloudType::Ptr match_cloud(new PointCloudType);
-//    for (int i = 0; i < size; i++) {
-//      match_cloud->points.push_back(points_to_add[i]);
-//    }
-//
-//    sensor_msgs::PointCloud2 laserCloudmsg;
-//    pcl::toROSMsg(*match_cloud, laserCloudmsg);
-//    laserCloudmsg.header.stamp = ros::Time().fromSec(lidar_end_time_);
-//    laserCloudmsg.header.frame_id = "camera_init";
-//    pub_match_cloud_world_.publish(laserCloudmsg);
-//  }
-//
-//  unsigned long size1 = point_no_need_down_sample.size();
-//  if(size1 != 0){
-//    PointCloudType::Ptr match_cloud1(new PointCloudType);
-//    for (int i = 0; i < size1; i++) {
-//      match_cloud1->points.push_back(point_no_need_down_sample[i]);
-//    }
-//
-//    sensor_msgs::PointCloud2 laserCloudmsg1;
-//    pcl::toROSMsg(*match_cloud1, laserCloudmsg1);
-//    laserCloudmsg1.header.stamp = ros::Time().fromSec(lidar_end_time_);
-//    laserCloudmsg1.header.frame_id = "camera_init";
-//    pub_match_cloud_world_.publish(laserCloudmsg1);
-//  }
-
-  //  Number::Record((unsigned long)points_to_add.size(), "add_point_size");
-  //  Number::Record((unsigned long)point_no_need_down_sample.size(), "no_need_ds_point_size");
-
   if(nn_type_ == nearest_neighbor_type::IKD_TREE){
     Timer::Evaluate([&, this](){
       ikd_tree_.Add_Points(points_to_add, true);
@@ -811,39 +700,6 @@ void lio::SubAndPubToROS(ros::NodeHandle &nh){
   sub_imu = nh.subscribe<sensor_msgs::Imu>(config_.imu_topic,
                                            200000,[this](const sensor_msgs::Imu::ConstPtr &msg)
                                            { IMUCallBack(msg); });
-  
-//  pub_odom_ = nh.advertise<nav_msgs::Odometry>(config_.odom_topic, 100);
-//  pub_odom_ = nh.advertise<nav_msgs::Odometry>(config_.odom_topic, 100);
-//  pub_path_ = nh.advertise<nav_msgs::Path>(config_.path_topic, 100);
-//  pub_laser_cloud_world_ = nh.advertise<sensor_msgs::PointCloud2>(config_.cloud_world_topic, 10000);
-//  pub_laser_cloud_imu_ = nh.advertise<sensor_msgs::PointCloud2>(config_.cloud_imu_topic, 10000);
-//  
-  // ROS subscribe initialization
-//  std::string lidar_topic, imu_topic;
-//  nh.param<std::string>("common/lid_topic", lidar_topic, "/livox/lidar");
-//  nh.param<std::string>("common/imu_topic", imu_topic, "/livox/imu");
-//
-//  if (preprocess_->GetLidarType() == LidarType::AVIA) {
-//    sub_pcl_ = nh.subscribe<livox_ros_driver::CustomMsg>(
-//        lidar_topic, 200000, [this](const livox_ros_driver::CustomMsg::ConstPtr &msg) { LivoxPCLCallBack(msg); });
-//  } else {
-//    sub_pcl_ = nh.subscribe<sensor_msgs::PointCloud2>(
-//        lidar_topic, 200000, [this](const sensor_msgs::PointCloud2::ConstPtr &msg) { StandardPCLCallBack(msg); });
-//  }
-//
-//  sub_imu_ = nh.subscribe<sensor_msgs::Imu>(imu_topic, 200000,
-//                                            [this](const sensor_msgs::Imu::ConstPtr &msg) { IMUCallBack(msg); });
-
-  // ROS publisher init
-//  path_.header.stamp = ros::Time::now();
-//  path_.header.frame_id = "camera_init";
-
-//  pub_laser_cloud_world_ = nh.advertise<sensor_msgs::PointCloud2>("/cloud_registered", 100000);
-//  pub_laser_cloud_body_ = nh.advertise<sensor_msgs::PointCloud2>("/cloud_registered_body", 100000);
-//  pub_laser_cloud_effect_world_ = nh.advertise<sensor_msgs::PointCloud2>("/cloud_registered_effect_world", 100000);
-//  pub_match_cloud_world_ = nh.advertise<sensor_msgs::PointCloud2>("/match_cloud_world", 100000);
-//  pub_odom_aft_mapped_ = nh.advertise<nav_msgs::Odometry>("/Odometry", 100000);
-//  pub_path_ = nh.advertise<nav_msgs::Path>("/path", 100000);
 
   path_.header.stamp = ros::Time::now();
   path_.header.frame_id = config_.init_frame;
