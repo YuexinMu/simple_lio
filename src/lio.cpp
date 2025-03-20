@@ -102,11 +102,6 @@ bool lio::Init(ros::NodeHandle &nh) {
   return true;
 }
 
-// init without ros
-bool lio::InitWithoutROS(const std::string &config_yaml){
-  return true;
-}
-
 void lio::Run(){
   if (!SyncPackages()) {
     return;
@@ -326,38 +321,6 @@ bool lio::SyncPackages() {
   return true;
 }
 
-// get quantile
-float lio::getQuantile(vector<float>& data, float quantile) {
-  size_t n = data.size();
-  size_t index = static_cast<size_t>(quantile * (n - 1));
-  nth_element(data.begin(), data.begin() + index, data.end());
-  return data[index];
-}
-
-void lio::detectOutliers(vector<float>& data, vector<float>& normal_data, std::vector<bool> &point_selected_surf) {
-  vector<float> sorted_data = data;
-  sorted_data.erase(remove(sorted_data.begin(), sorted_data.end(), -1.0), sorted_data.end());
-  sort(sorted_data.begin(), sorted_data.end());
-
-  // 计算四分位数
-  float Q1 = getQuantile(sorted_data, 0.1);
-  float Q3 = getQuantile(sorted_data, 0.9);
-  float IQR = Q3 - Q1;
-
-  // 异常值的范围
-  float lower_bound = Q1 - 1.5 * IQR;
-  float upper_bound = Q3 + 1.5 * IQR;
-  // 将数据分类为正常值和异常值
-  for (int i = 0; i < data.size(); i++) {
-    //    if (data[i] < lower_bound || data[i] > upper_bound) {
-    if (data[i] < Q1 || data[i] > Q3) {
-      //      point_selected_surf[i] = false;
-    } else {
-      normal_data.push_back(data[i]);
-    }
-  }
-}
-
 // interface of mtk, customized observation model
 void lio::ObsModel(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_data){
   unsigned long cnt_pts = scan_down_body_->size();
@@ -545,30 +508,6 @@ void lio::PublishFrameEffectWorld(const ros::Publisher &pub_laser_cloud_effect_w
   pub_laser_cloud_effect_world.publish(laserCloudmsg);
 }
 
-void lio::SaveTrajectory(const std::string &traj_file) {
-  std::ofstream ofs;
-  ofs.open(traj_file, std::ios::out);
-  if (!ofs.is_open()) {
-    LOG(ERROR) << "Failed to open traj_file: " << traj_file;
-    return;
-  }
-
-  // tum trajectory format
-  ofs << "#timestamp x y z q_x q_y q_z q_w" << std::endl;
-  for (const auto &p : path_.poses) {
-    ofs << std::fixed << std::setprecision(6) << p.header.stamp.toSec() << " " << std::setprecision(15)
-        << p.pose.position.x << " " << p.pose.position.y << " " << p.pose.position.z << " " << p.pose.orientation.x
-        << " " << p.pose.orientation.y << " " << p.pose.orientation.z << " " << p.pose.orientation.w << std::endl;
-  }
-
-  ofs.close();
-}
-
-void lio::Finish() {
-  /**************** save map ****************/
-
-  LOG(INFO) << "finish done";
-}
 
 void lio::PointBodyToWorld(const PointType *pi, PointType *const po) {
   Vec3d p_body(pi->x, pi->y, pi->z);
