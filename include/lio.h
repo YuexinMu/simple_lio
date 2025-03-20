@@ -103,10 +103,10 @@ public:
   void ObsModel(state_ikfom &state_ikf, esekfom::dyn_share_datastruct<double> &ekfom_data);
 
   // debug save / show
-  void PublishPath(const ros::Publisher& pub_path);
-  void PublishOdometry(const ros::Publisher &pub_odom_aft_mapped);
-  void PublishFrameWorld();
-  void PublishFrameBody();
+//  void PublishPath(const ros::Publisher& pub_path);
+//  void PublishOdometry(const ros::Publisher &pub_odom_aft_mapped);
+//  void PublishFrameWorld();
+//  void PublishFrameBody();
   void PublishFrameEffectWorld(const ros::Publisher &pub_laser_cloud_effect_world);
   void SaveTrajectory(const std::string &traj_file);
 
@@ -114,11 +114,18 @@ public:
 
 private:
   template <typename T>
-  void SetPoseStamp(T &out);
+  void SetPoseStamp(SopSE3 pose, T &out);
+  void PublishPath(const SopSE3& pose);
+  void PublishOdom(const SopSE3& pose);
+  void PublishPointCloud(const CloudPtr& cloud, std::string frame_id,
+                         const ros::Publisher& pub);
+
+  SopSE3 State2SE3(state_ikfom state);
 
   void PointBodyToWorld(PointType const *pi, PointType *const po);
   void PointBodyToWorld(const Vec3f &pi, PointType *const po);
   void PointBodyLidarToIMU(PointType const *const pi, PointType *const po);
+  CloudPtr PointCloudLidarToIMU(CloudPtr &pi);
 
   void MapIncremental();
 
@@ -172,16 +179,24 @@ private:
   VVec4F plane_coef_;                         // plane coeffs
 
   /// ros pub and sub stuffs
-  ros::Subscriber sub_pcl_;
-  ros::Subscriber sub_imu_;
-  ros::Publisher pub_laser_cloud_world_;
-  ros::Publisher pub_laser_cloud_body_;
-  ros::Publisher pub_laser_cloud_effect_world_;
-  ros::Publisher pub_match_cloud_world_;
-  ros::Publisher pub_odom_aft_mapped_;
+//  ros::Subscriber sub_pcl_;
+//  ros::Subscriber sub_imu_;
+//  ros::Publisher pub_laser_cloud_world_;
+//  ros::Publisher pub_laser_cloud_body_;
+//  ros::Publisher pub_laser_cloud_effect_world_;
+//  ros::Publisher pub_match_cloud_world_;
+//  ros::Publisher pub_odom_aft_mapped_;
+//  ros::Publisher pub_path_;
+//  std::string tf_imu_frame_;
+//  std::string tf_world_frame_;
+
+  ros::Publisher pub_odom_;
   ros::Publisher pub_path_;
-  std::string tf_imu_frame_;
-  std::string tf_world_frame_;
+  ros::Publisher pub_laser_cloud_world_;
+  ros::Publisher pub_laser_cloud_imu_;
+
+  nav_msgs::Odometry odometry_;
+  nav_msgs::Path path_;
 
   std::mutex mtx_buffer_;
   std::deque<double> time_buffer_;
@@ -230,9 +245,9 @@ private:
   bool traj_save_en_ = false;
   std::string dataset_;
 
-  PointCloudType::Ptr pcl_wait_save_{new PointCloudType()};  // debug save
-  nav_msgs::Path path_;
-  geometry_msgs::PoseStamped msg_body_pose_;
+//  PointCloudType::Ptr pcl_wait_save_{new PointCloudType()};  // debug save
+//  nav_msgs::Path path_;
+//  geometry_msgs::PoseStamped msg_body_pose_;
 
 };
 
