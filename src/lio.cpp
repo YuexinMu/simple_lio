@@ -531,16 +531,6 @@ void lio::PointBodyToWorld(const Vec3f &pi, PointType *const po) {
   po->intensity = std::abs(po->z);
 }
 
-void lio::PointBodyLidarToIMU(PointType const *const pi, PointType *const po) {
-  Vec3d p_body_lidar(pi->x, pi->y, pi->z);
-  Vec3d p_body_imu(state_point_.offset_R_L_I * p_body_lidar + state_point_.offset_T_L_I);
-
-  po->x = p_body_imu(0);
-  po->y = p_body_imu(1);
-  po->z = p_body_imu(2);
-  po->intensity = pi->intensity;
-}
-
 CloudPtr lio::PointCloudLidarToIMU(CloudPtr &pi) {
   CloudPtr po{new PointCloudType()};
   size_t size = pi->points.size();

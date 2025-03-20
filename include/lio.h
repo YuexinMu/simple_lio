@@ -82,8 +82,6 @@ public:
 
   // init with ros
   bool Init(ros::NodeHandle &nh);
-  // init without ros
-  bool InitWithoutROS(const std::string &config_yaml);
 
   void Run();
 
@@ -95,18 +93,10 @@ public:
   // sync lidar with imu
   bool SyncPackages();
 
-  // get quantile
-  static float getQuantile(vector<float>& data, float quantile);
-  // detection outlier
-  static void detectOutliers(vector<float>& data, vector<float>& normal_data, std::vector<bool> &point_selected_surf);
-  // interface of mtk, customized obseravtion model
   void ObsModel(state_ikfom &state_ikf, esekfom::dyn_share_datastruct<double> &ekfom_data);
 
   // debug save / show
   void PublishFrameEffectWorld(const ros::Publisher &pub_laser_cloud_effect_world);
-  void SaveTrajectory(const std::string &traj_file);
-
-  void Finish();
 
 private:
   template <typename T>
@@ -120,7 +110,7 @@ private:
 
   void PointBodyToWorld(PointType const *pi, PointType *const po);
   void PointBodyToWorld(const Vec3f &pi, PointType *const po);
-  void PointBodyLidarToIMU(PointType const *const pi, PointType *const po);
+//  void PointBodyLidarToIMU(PointType const *const pi, PointType *const po);
   CloudPtr PointCloudLidarToIMU(CloudPtr &pi);
 
   void MapIncremental();
@@ -135,8 +125,6 @@ private:
 private:
   SimpleLioConfig config_;
 
-  float ESTI_PLANE_THRESHOLD_ = 0.1;
-  int NUM_MAX_ITERATIONS_ = 3;
   // nearest neighbor type select
   nearest_neighbor_type nn_type_ = nearest_neighbor_type::IVOX;
 
@@ -144,8 +132,6 @@ private:
   std::shared_ptr<IVoxType> ivox_ = nullptr;
 
   KD_TREE<PointType> ikd_tree_;
-  pcl::VoxelGrid<PointType> down_size_filter_surf_;
-  BoxPointType local_map_points_{};
 
   std::shared_ptr<PointCloudPreprocess> preprocess_ = nullptr;  // point cloud preprocess
   std::shared_ptr<ImuProcess> p_imu_ = nullptr;                 // imu process
