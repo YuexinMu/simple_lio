@@ -24,6 +24,54 @@ enum nearest_neighbor_type{
   IVOX
 };
 
+struct SimpleLioConfig {
+  // common params
+  std::string lid_topic;
+  std::string imu_topic;
+  bool time_sync_en = false;
+
+  // lidar params
+  int lidar_type;
+  int scan_line;
+  double blind;
+  float time_scale;
+
+  // imu params
+  double acc_cov;
+  double gyr_cov;
+  double b_acc_cov;
+  double b_gyr_cov;
+
+  // lidar-imu params
+  std::vector<double> extrinsic_T{3, 0.0};
+  std::vector<double> extrinsic_R{9, 0.0};
+
+  // preprocess params
+  int point_filter_num;
+  float filter_size_surf;
+  bool feature_extract_enable;
+
+  // filter params
+  float filter_size_map;
+  bool extrinsic_est_en;
+  float plane_threshold;
+  int max_iteration;
+
+  // frame info params
+  std::string body_frame;
+  std::string init_frame;
+  std::string odom_topic;
+  std::string path_topic;
+  std::string cloud_world_topic;
+  std::string cloud_imu_topic;
+
+  int nn_type;
+
+  float resolution;
+  int nearby_type;
+
+};
+
 class lio{
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
@@ -33,7 +81,7 @@ public:
   ~lio();
 
   // init with ros
-  bool InitROS(ros::NodeHandle &nh);
+  bool Init(ros::NodeHandle &nh);
   // init without ros
   bool InitWithoutROS(const std::string &config_yaml);
 
@@ -76,12 +124,14 @@ private:
 
   void SubAndPubToROS(ros::NodeHandle &nh);
 
-  bool InitParamsFromROS(ros::NodeHandle &nh);
+  bool LoadParams(ros::NodeHandle &nh);
   bool LoadParamsFromYAML(const std::string &yaml);
 
   void PrintState(const state_ikfom &s);
 
 private:
+  SimpleLioConfig config_;
+
   float ESTI_PLANE_THRESHOLD_ = 0.1;
   int NUM_MAX_ITERATIONS_ = 3;
   // nearest neighbor type select
