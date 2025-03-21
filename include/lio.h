@@ -112,6 +112,7 @@ private:
   void PointBodyToWorld(PointType const *pi, PointType *const po);
   void PointBodyToWorld(const Vec3f &pi, PointType *const po);
 //  void PointBodyLidarToIMU(PointType const *const pi, PointType *const po);
+  CloudPtr PointCloudBodyToWorld(CloudPtr &pi);
   CloudPtr PointCloudLidarToIMU(CloudPtr &pi);
 
   void MapIncremental();

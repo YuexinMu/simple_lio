@@ -187,9 +187,9 @@ void lio::Run(){
   PublishPath(State2SE3(state_point_));
   PublishOdom(State2SE3(state_point_));
 
-  PublishPointCloud(PointCloudLidarToIMU(scan_down_body_),
+  PublishPointCloud(PointCloudLidarToIMU(scan_undistort_),
                     config_.body_frame, pub_laser_cloud_imu_);
-  PublishPointCloud(scan_down_world_, config_.init_frame,
+  PublishPointCloud(PointCloudBodyToWorld(scan_undistort_), config_.init_frame,
                     pub_laser_cloud_world_);
 
   // Debug variables
@@ -530,6 +530,25 @@ void lio::PointBodyToWorld(const Vec3f &pi, PointType *const po) {
   po->y = p_global(1);
   po->z = p_global(2);
   po->intensity = std::abs(po->z);
+}
+
+CloudPtr lio::PointCloudBodyToWorld(CloudPtr &pi) {
+  CloudPtr po{new PointCloudType()};
+  size_t size = pi->points.size();
+  po->points.resize(size);
+
+  for(int i = 0; i < size; i++) {
+    Vec3d p_body(pi->points[i].x, pi->points[i].y, pi->points[i].z);
+    Vec3d p_global(state_point_.rot * (state_point_.offset_R_L_I * p_body + state_point_.offset_T_L_I) +
+                   state_point_.pos);
+
+    po->points[i].x = (float)p_global[0];
+    po->points[i].y = (float)p_global[1];
+    po->points[i].z = (float)p_global[2];
+    po->points[i].intensity = pi->points[i].intensity;
+  }
+
+  return po;
 }
 
 CloudPtr lio::PointCloudLidarToIMU(CloudPtr &pi) {
