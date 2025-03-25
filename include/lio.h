@@ -9,6 +9,7 @@
 #include <pcl/filters/voxel_grid.h>
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <sensor_msgs/LaserScan.h>
 #include <condition_variable>
 #include <thread>
 
@@ -64,11 +65,22 @@ struct SimpleLioConfig {
   std::string path_topic;
   std::string cloud_world_topic;
   std::string cloud_imu_topic;
+  std::string scan_imu_topic;
 
   int nn_type;
 
+  // ivox params
   float resolution;
   int nearby_type;
+
+  // laser scan params
+  double max_height;
+  double min_height;
+  float range_max;
+  float range_min;
+  int scan_frequency;
+  int scan_width;
+
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 };
 
@@ -105,6 +117,8 @@ private:
   void PublishPath(const SopSE3& pose);
   void PublishOdom(const SopSE3& pose);
   void PublishPointCloud(const CloudPtr& cloud, std::string frame_id,
+                         const ros::Publisher& pub);
+  void PublishLaserScan(const CloudPtr& cloud, std::string frame_id,
                          const ros::Publisher& pub);
 
   SopSE3 State2SE3(state_ikfom state);
@@ -152,8 +166,9 @@ private:
 
   ros::Publisher pub_odom_;
   ros::Publisher pub_path_;
-  ros::Publisher pub_laser_cloud_world_;
-  ros::Publisher pub_laser_cloud_imu_;
+  ros::Publisher pub_point_cloud_world_;
+  ros::Publisher pub_point_cloud_imu_;
+  ros::Publisher pub_laser_scan_imu_;
 
   nav_msgs::Odometry odometry_;
   nav_msgs::Path path_;

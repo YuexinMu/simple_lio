@@ -187,11 +187,12 @@ void lio::Run(){
   PublishPath(State2SE3(state_point_));
   PublishOdom(State2SE3(state_point_));
 
-  PublishPointCloud(PointCloudLidarToIMU(scan_undistort_),
-                    config_.body_frame, pub_laser_cloud_imu_);
+  PublishPointCloud(PointCloudLidarToIMU(scan_undistort_), config_.body_frame,
+                    pub_point_cloud_imu_);
   PublishPointCloud(PointCloudBodyToWorld(scan_undistort_), config_.init_frame,
-                    pub_laser_cloud_world_);
-
+                    pub_point_cloud_world_);
+  PublishLaserScan(PointCloudLidarToIMU(scan_undistort_), config_.body_frame,
+                   pub_laser_scan_imu_);
   // Debug variables
   frame_num_++;
 }
@@ -490,6 +491,62 @@ void lio::PublishPointCloud(const CloudPtr& cloud, std::string frame_id,
   pub.publish(laserCloudmsg);
 }
 
+void lio::PublishLaserScan(const CloudPtr& cloud, std::string frame_id,
+                           const ros::Publisher& pub){
+  if(preprocess_->GetLidarType() == LidarType::AVIA){
+    ROS_WARN_ONCE("AVIA lidar type don't support publish laser scan!");
+    return;
+  }
+  sensor_msgs::LaserScan scan_msg;
+  scan_msg.angle_min = -M_PI;
+  scan_msg.angle_max = M_PI;
+  scan_msg.angle_increment = float(2.0 * M_PI / (float)config_.scan_width);
+  scan_msg.time_increment = 1.0f / float(config_.scan_width * config_.scan_frequency);
+  scan_msg.scan_time = 1.0f / (float)config_.scan_frequency;
+  scan_msg.range_min = config_.range_min;
+  scan_msg.range_max = config_.range_max;
+
+  uint32_t ranges_size = std::ceil((scan_msg.angle_max - scan_msg.angle_min) / scan_msg.angle_increment);
+  scan_msg.ranges.assign(ranges_size, std::numeric_limits<float>::infinity());
+  size_t size = cloud->points.size();
+  for(int i = 0; i < size; i++) {
+    float px = cloud->points[i].x;
+    float py = cloud->points[i].y;
+    float pz = cloud->points[i].z;
+
+    if (std::isnan(px) || std::isnan(py) || std::isnan(pz)) {
+      continue;
+    }
+
+    if (pz > config_.max_height || pz < config_.min_height) {
+      continue;
+    }
+
+    double range = hypot(px, py);
+    if (range < config_.range_min) {
+      continue;
+    }
+    if (range > config_.range_max) {
+      continue;
+    }
+
+    double angle = atan2(py, px);
+    if (angle < scan_msg.angle_min || angle > scan_msg.angle_max) {
+      continue;
+    }
+
+    // overwrite range at laserscan ray if new range is smaller
+    int index = (int)((angle - scan_msg.angle_min) / scan_msg.angle_increment);
+    if (range < scan_msg.ranges[index]) {
+      scan_msg.ranges[index] = (float)range;
+    }
+  }
+
+  scan_msg.header.stamp = ros::Time().fromSec(lidar_end_time_);
+  scan_msg.header.frame_id = std::move(frame_id);
+  pub.publish(scan_msg);
+}
+
 SopSE3 lio::State2SE3(state_ikfom state){
   SopSE3 se_3 = SopSE3(state.rot, state.pos);
   return se_3;
@@ -654,8 +711,9 @@ void lio::SubAndPubToROS(ros::NodeHandle &nh){
   
   pub_odom_ = nh.advertise<nav_msgs::Odometry>(config_.odom_topic, 100);
   pub_path_ = nh.advertise<nav_msgs::Path>(config_.path_topic, 100);
-  pub_laser_cloud_world_ = nh.advertise<sensor_msgs::PointCloud2>(config_.cloud_world_topic, 10000);
-  pub_laser_cloud_imu_ = nh.advertise<sensor_msgs::PointCloud2>(config_.cloud_imu_topic, 10000);
+  pub_point_cloud_world_ = nh.advertise<sensor_msgs::PointCloud2>(config_.cloud_world_topic, 10000);
+  pub_point_cloud_imu_ = nh.advertise<sensor_msgs::PointCloud2>(config_.cloud_imu_topic, 10000);
+  pub_laser_scan_imu_ = nh.advertise<sensor_msgs::LaserScan>(config_.scan_imu_topic, 10000);
 }
 
 bool lio::LoadParams(ros::NodeHandle &nh){
@@ -697,10 +755,18 @@ bool lio::LoadParams(ros::NodeHandle &nh){
   nh.param<std::string>("lio_base/path_topic", config_.path_topic, "path");
   nh.param<std::string>("lio_base/cloud_world_topic", config_.cloud_world_topic, "cloud_registered_world");
   nh.param<std::string>("lio_base/cloud_imu_topic", config_.cloud_imu_topic, "cloud_registered_imu");
+  nh.param<std::string>("lio_base/scan_imu_topic", config_.scan_imu_topic, "scan_imu");
 
   // ivox params
   nh.param<float>("faster_lio/ivox_grid_resolution", config_.resolution, 0.2);
   nh.param<int>("faster_lio/ivox_nearby_type", config_.nearby_type, 18);
+
+  nh.param<double>("scan/max_height", config_.max_height, 1.0);
+  nh.param<double>("scan/min_height", config_.min_height, -0.2);
+  nh.param<float>("scan/range_max", config_.range_max, 200.0);
+  nh.param<float>("scan/range_min", config_.range_min, 0.0);
+  nh.param<int>("scan/scan_frequency", config_.scan_frequency, 10);
+  nh.param<int>("scan/scan_width", config_.scan_width, 2048);
   return true;
 }
 
