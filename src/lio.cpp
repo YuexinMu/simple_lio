@@ -185,7 +185,7 @@ void lio::Run(){
   Timer::Evaluate([&, this]() { MapIncremental(); }, "    Incremental Mapping");
 
   PublishPath(State2SE3(state_point_));
-  PublishOdom(State2SE3(state_point_));
+  PublishOdom(IMU2Base(State2SE3(state_point_)));
 
   PublishPointCloud(PointCloudLidarToIMU(scan_undistort_), config_.body_frame,
                     pub_point_cloud_imu_);
@@ -474,7 +474,7 @@ void lio::PublishOdom(const SopSE3& pose) {
   q.setZ(odometry_.pose.pose.orientation.z);
   transform.setRotation(q);
   br.sendTransform(tf::StampedTransform(transform, odometry_.header.stamp,
-                                        config_.init_frame, config_.body_frame));
+                                        config_.init_frame, config_.base_frame));
 }
 
 void lio::PublishPointCloud(const CloudPtr& cloud, std::string frame_id,
@@ -550,6 +550,19 @@ void lio::PublishLaserScan(const CloudPtr& cloud, std::string frame_id,
 SopSE3 lio::State2SE3(state_ikfom state){
   SopSE3 se_3 = SopSE3(state.rot, state.pos);
   return se_3;
+}
+
+SopSE3 lio::IMU2Base(SopSE3 state_imu){
+  Vec3d Vec_imu2base_T = VecFromArray<double>(config_.imu2base_T);
+  Mat3d Mat_imu2base_R = MatFromArray<double>(config_.imu2base_R);
+
+  Mat4d imu2base_Mat4 = Mat4d::Identity();
+  imu2base_Mat4.block<3,1>(0,3) = Vec_imu2base_T;
+  imu2base_Mat4.block<3,3>(0,0) = Mat_imu2base_R;
+
+  SopSE3 imu2base_SE3 = Mat4ToSE3(imu2base_Mat4);
+  SopSE3 odom_base_SE3 = state_imu * imu2base_SE3.inverse();
+  return odom_base_SE3;
 }
 
 void lio::PublishFrameEffectWorld(const ros::Publisher &pub_laser_cloud_effect_world) {
@@ -707,7 +720,7 @@ void lio::SubAndPubToROS(ros::NodeHandle &nh){
   path_.header.frame_id = config_.init_frame;
   
   odometry_.header.frame_id = config_.init_frame;
-  odometry_.child_frame_id = config_.body_frame;
+  odometry_.child_frame_id = config_.base_frame;
   
   pub_odom_ = nh.advertise<nav_msgs::Odometry>(config_.odom_topic, 100);
   pub_path_ = nh.advertise<nav_msgs::Path>(config_.path_topic, 100);
@@ -735,6 +748,8 @@ bool lio::LoadParams(ros::NodeHandle &nh){
 
   nh.param<std::vector<double>>("lio_base/extrinsic_T", config_.extrinsic_T, std::vector<double>());
   nh.param<std::vector<double>>("lio_base/extrinsic_R", config_.extrinsic_R, std::vector<double>());
+  nh.param<std::vector<double>>("lio_base/imu2base_T", config_.imu2base_T, std::vector<double>());
+  nh.param<std::vector<double>>("lio_base/imu2base_R", config_.imu2base_R, std::vector<double>());
 
   nh.param<int>("lio_base/point_filter_num", config_.point_filter_num, 2);
   nh.param<float>("lio_base/filter_size_surf", config_.filter_size_surf, 0.5);
@@ -751,11 +766,13 @@ bool lio::LoadParams(ros::NodeHandle &nh){
   // frame info params
   nh.param<std::string>("lio_base/body_frame", config_.body_frame, "body");
   nh.param<std::string>("lio_base/init_frame", config_.init_frame, "camera_init");
+  nh.param<std::string>("lio_base/base_frame", config_.base_frame, "base_link");
   nh.param<std::string>("lio_base/odom_topic", config_.odom_topic, "odometry");
   nh.param<std::string>("lio_base/path_topic", config_.path_topic, "path");
   nh.param<std::string>("lio_base/cloud_world_topic", config_.cloud_world_topic, "cloud_registered_world");
   nh.param<std::string>("lio_base/cloud_imu_topic", config_.cloud_imu_topic, "cloud_registered_imu");
   nh.param<std::string>("lio_base/scan_imu_topic", config_.scan_imu_topic, "scan_imu");
+  nh.param<bool>("lio_base/pub_use_dataset_time", config_.pub_use_dataset_time, false);
 
   // ivox params
   nh.param<float>("faster_lio/ivox_grid_resolution", config_.resolution, 0.2);

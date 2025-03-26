@@ -46,6 +46,8 @@ struct SimpleLioConfig {
   // lidar-imu params
   std::vector<double> extrinsic_T{3, 0.0};
   std::vector<double> extrinsic_R{9, 0.0};
+  std::vector<double> imu2base_T{3, 0.0};
+  std::vector<double> imu2base_R{9, 0.0};
 
   // preprocess params
   int point_filter_num;
@@ -61,11 +63,13 @@ struct SimpleLioConfig {
   // frame info params
   std::string body_frame;
   std::string init_frame;
+  std::string base_frame;
   std::string odom_topic;
   std::string path_topic;
   std::string cloud_world_topic;
   std::string cloud_imu_topic;
   std::string scan_imu_topic;
+  bool pub_use_dataset_time;
 
   int nn_type;
 
@@ -122,6 +126,7 @@ private:
                          const ros::Publisher& pub);
 
   SopSE3 State2SE3(state_ikfom state);
+  SopSE3 IMU2Base(SopSE3 state_imu);
 
   void PointBodyToWorld(PointType const *pi, PointType *const po);
   void PointBodyToWorld(const Vec3f &pi, PointType *const po);
