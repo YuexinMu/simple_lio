@@ -21,7 +21,7 @@
   <depend>rospy</depend>
   <depend>std_msgs</depend>
   <depend>sensor_msgs</depend>
-  <depend>tf</depend>
+  <depend>tf2_ros</depend>
   <depend>pcl_ros</depend>
   <depend>message_generation</depend>
   <depend>message_runtime</depend>

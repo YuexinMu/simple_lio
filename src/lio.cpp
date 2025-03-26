@@ -6,7 +6,8 @@
 
 #include <filesystem>
 #include <ctime>
-#include <tf/transform_broadcaster.h>
+#include "tf2_ros/transform_broadcaster.h"
+#include "tf2_ros/transform_listener.h"
 
 namespace simple_lio{
 
@@ -462,19 +463,20 @@ void lio::PublishOdom(const SopSE3& pose) {
   SetPoseStamp(pose, odometry_.pose);
   pub_odom_.publish(odometry_);
 
-  static tf::TransformBroadcaster br;
-  tf::Transform transform;
-  tf::Quaternion q;
-  transform.setOrigin(tf::Vector3(odometry_.pose.pose.position.x,
-                                  odometry_.pose.pose.position.y,
-                                  odometry_.pose.pose.position.z));
-  q.setW(odometry_.pose.pose.orientation.w);
-  q.setX(odometry_.pose.pose.orientation.x);
-  q.setY(odometry_.pose.pose.orientation.y);
-  q.setZ(odometry_.pose.pose.orientation.z);
-  transform.setRotation(q);
-  br.sendTransform(tf::StampedTransform(transform, odometry_.header.stamp,
-                                        config_.init_frame, config_.base_frame));
+  static tf2_ros::TransformBroadcaster br;
+  geometry_msgs::TransformStamped transform;
+
+  transform.header.stamp = odometry_.header.stamp;
+  transform.header.frame_id = config_.init_frame;
+  transform.child_frame_id = config_.base_frame;
+
+  transform.transform.translation.x = odometry_.pose.pose.position.x;
+  transform.transform.translation.y = odometry_.pose.pose.position.y;
+  transform.transform.translation.z = odometry_.pose.pose.position.z;
+  transform.transform.rotation = odometry_.pose.pose.orientation;
+
+  br.sendTransform(transform);
+
 }
 
 void lio::PublishPointCloud(const CloudPtr& cloud, std::string frame_id,
