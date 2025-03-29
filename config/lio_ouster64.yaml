@@ -23,7 +23,7 @@ lio_base:
                   0, 0, 1]
 
     # lidar-imu params
-    imu2base_T: [ 0.0, 0.0, 0.0 ]
+    imu2base_T: [ 0.0, 0.0, 0.35 ]
     imu2base_R: [1, 0, 0,
                  0, 1, 0,
                  0, 0, 1]
@@ -42,7 +42,7 @@ lio_base:
     nearest_neighbor_type: 2 # 1 for IKD_TREE, 2 for IVOX
 
     # frame info params
-    body_frame: "lidar_link"
+    body_frame: "ouster_lidar_link"
     init_frame: "odom"
     base_frame: "base_link"
 
@@ -59,6 +59,6 @@ faster_lio:
 
 scan:
     max_height: 1.0
-    min_height: -0.2
+    min_height: -0.35
     range_max: 200.0
     range_min: 0.0
