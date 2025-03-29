@@ -9,6 +9,7 @@
 #include <pcl/filters/voxel_grid.h>
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <sensor_msgs/LaserScan.h>
 #include <condition_variable>
 #include <thread>
 
@@ -16,7 +17,7 @@
 #include "ivox3d/ivox3d.h"
 #include "common/pointcloud_preprocess.h"
 #include "common/use-ikfom.hpp"
-#include <ikd-Tree/ikd_Tree.hpp>
+#include "ikd-Tree/ikd_Tree.hpp"
 
 namespace simple_lio {
 enum nearest_neighbor_type{
@@ -24,18 +25,79 @@ enum nearest_neighbor_type{
   IVOX
 };
 
+struct SimpleLioConfig {
+  // common params
+  std::string lid_topic;
+  std::string imu_topic;
+  bool time_sync_en = false;
+
+  // lidar params
+  int lidar_type;
+  int scan_line;
+  double blind;
+  float time_scale;
+
+  // imu params
+  double acc_cov;
+  double gyr_cov;
+  double b_acc_cov;
+  double b_gyr_cov;
+
+  // lidar-imu params
+  std::vector<double> extrinsic_T{3, 0.0};
+  std::vector<double> extrinsic_R{9, 0.0};
+  std::vector<double> imu2base_T{3, 0.0};
+  std::vector<double> imu2base_R{9, 0.0};
+
+  // preprocess params
+  int point_filter_num;
+  float filter_size_surf;
+  bool feature_extract_enable;
+
+  // filter params
+  float filter_size_map;
+  bool extrinsic_est_en;
+  float plane_threshold;
+  int max_iteration;
+
+  // frame info params
+  std::string body_frame;
+  std::string init_frame;
+  std::string base_frame;
+  std::string odom_topic;
+  std::string path_topic;
+  std::string cloud_world_topic;
+  std::string cloud_imu_topic;
+  std::string scan_imu_topic;
+  bool pub_use_dataset_time;
+
+  int nn_type;
+
+  // ivox params
+  float resolution;
+  int nearby_type;
+
+  // laser scan params
+  double max_height;
+  double min_height;
+  float range_max;
+  float range_min;
+  int scan_frequency;
+  int scan_width;
+
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+};
+
 class lio{
+EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
 public:
-  EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
   using IVoxType = ivox3d::IVox<3, ivox3d::IVoxNodeType::DEFAULT, PointType>;
 
   lio();
   ~lio();
 
   // init with ros
-  bool InitROS(ros::NodeHandle &nh);
-  // init without ros
-  bool InitWithoutROS(const std::string &config_yaml);
+  bool Init(ros::NodeHandle &nh);
 
   void Run();
 
@@ -47,43 +109,43 @@ public:
   // sync lidar with imu
   bool SyncPackages();
 
-  // get quantile
-  static float getQuantile(vector<float>& data, float quantile);
-  // detection outlier
-  static void detectOutliers(vector<float>& data, vector<float>& normal_data, std::vector<bool> &point_selected_surf);
-  // interface of mtk, customized obseravtion model
   void ObsModel(state_ikfom &state_ikf, esekfom::dyn_share_datastruct<double> &ekfom_data);
+  void Finish(std::string log_dir);
 
   // debug save / show
-  void PublishPath(const ros::Publisher& pub_path);
-  void PublishOdometry(const ros::Publisher &pub_odom_aft_mapped);
-  void PublishFrameWorld();
-  void PublishFrameBody();
   void PublishFrameEffectWorld(const ros::Publisher &pub_laser_cloud_effect_world);
-  void SaveTrajectory(const std::string &traj_file);
-
-  void Finish();
 
 private:
   template <typename T>
-  void SetPoseStamp(T &out);
+  void SetPoseStamp(SopSE3 pose, T &out);
+  void PublishPath(const SopSE3& pose);
+  void PublishOdom(const SopSE3& pose);
+  void PublishPointCloud(const CloudPtr& cloud, std::string frame_id,
+                         const ros::Publisher& pub);
+  void PublishLaserScan(const CloudPtr& cloud, std::string frame_id,
+                         const ros::Publisher& pub);
+
+  SopSE3 State2SE3(state_ikfom state);
+  SopSE3 IMU2Base(SopSE3 state_imu);
 
   void PointBodyToWorld(PointType const *pi, PointType *const po);
   void PointBodyToWorld(const Vec3f &pi, PointType *const po);
-  void PointBodyLidarToIMU(PointType const *const pi, PointType *const po);
+//  void PointBodyLidarToIMU(PointType const *const pi, PointType *const po);
+  CloudPtr PointCloudBodyToWorld(CloudPtr &pi);
+  CloudPtr PointCloudLidarToIMU(CloudPtr &pi);
 
   void MapIncremental();
 
   void SubAndPubToROS(ros::NodeHandle &nh);
 
-  bool InitParamsFromROS(ros::NodeHandle &nh);
+  bool LoadParams(ros::NodeHandle &nh);
   bool LoadParamsFromYAML(const std::string &yaml);
 
   void PrintState(const state_ikfom &s);
 
 private:
-  float ESTI_PLANE_THRESHOLD_ = 0.1;
-  int NUM_MAX_ITERATIONS_ = 3;
+  SimpleLioConfig config_;
+
   // nearest neighbor type select
   nearest_neighbor_type nn_type_ = nearest_neighbor_type::IVOX;
 
@@ -91,23 +153,9 @@ private:
   std::shared_ptr<IVoxType> ivox_ = nullptr;
 
   KD_TREE<PointType> ikd_tree_;
-  pcl::VoxelGrid<PointType> down_size_filter_surf_;
-  BoxPointType local_map_points_{};
 
   std::shared_ptr<PointCloudPreprocess> preprocess_ = nullptr;  // point cloud preprocess
   std::shared_ptr<ImuProcess> p_imu_ = nullptr;                 // imu process
-
-  /// local map related
-  float det_range_ = 300.0f;
-  double cube_len_ = 0;
-
-  float filter_size_surf_min_ = 0.0;
-  float filter_size_map_min_ = 0.0;
-
-  /// params
-  std::vector<double> extrinT_{3, 0.0};  // lidar-imu translation
-  std::vector<double> extrinR_{9, 0.0};  // lidar-imu rotation
-  std::string map_file_path_;
 
   /// point clouds data
   CloudPtr scan_undistort_{new PointCloudType()};   // scan after undistortion
@@ -121,26 +169,21 @@ private:
   std::vector<bool> point_selected_surf_;           // selected points
   VVec4F plane_coef_;                         // plane coeffs
 
-  /// ros pub and sub stuffs
-  ros::Subscriber sub_pcl_;
-  ros::Subscriber sub_imu_;
-  ros::Publisher pub_laser_cloud_world_;
-  ros::Publisher pub_laser_cloud_body_;
-  ros::Publisher pub_laser_cloud_effect_world_;
-  ros::Publisher pub_match_cloud_world_;
-  ros::Publisher pub_odom_aft_mapped_;
+  ros::Publisher pub_odom_;
   ros::Publisher pub_path_;
-  std::string tf_imu_frame_;
-  std::string tf_world_frame_;
+  ros::Publisher pub_point_cloud_world_;
+  ros::Publisher pub_point_cloud_imu_;
+  ros::Publisher pub_laser_scan_imu_;
+
+  nav_msgs::Odometry odometry_;
+  nav_msgs::Path path_;
 
   std::mutex mtx_buffer_;
   std::deque<double> time_buffer_;
   std::deque<PointCloudType::Ptr> lidar_buffer_;
   std::deque<sensor_msgs::Imu::ConstPtr> imu_buffer_;
-  nav_msgs::Odometry odom_aft_mapped_;
 
   /// options
-  bool time_sync_en_ = false;
   double timediff_lidar_wrt_imu_ = 0.0;
   double last_timestamp_lidar_ = 0;
   double lidar_end_time_ = 0;
@@ -153,7 +196,6 @@ private:
   int publish_count_ = 0;
   bool flg_first_scan_ = true;
   bool flg_EKF_inited_ = false;
-  int pcd_index_ = 0;
   double lidar_mean_scantime_ = 0.0;
   int scan_num_ = 0;
   bool timediff_set_flg_ = false;
@@ -164,26 +206,7 @@ private:
   esekfom::esekf<state_ikfom, 12, input_ikfom> kf_;  // esekf
   state_ikfom state_point_;                          // ekf current state
   vect3 pos_lidar_;                                  // lidar position after eskf update
-  Vec3d euler_cur_ = Vec3d::Zero();      // rotation in euler angles
   bool extrinsic_est_en_ = true;
-
-  /////////////////////////  debug show / save /////////////////////////////////////////////////////////
-  bool run_in_offline_ = false;
-  bool path_pub_en_ = true;
-  bool scan_pub_en_ = false;
-  bool dense_pub_en_ = false;
-  bool scan_body_pub_en_ = false;
-  bool scan_effect_pub_en_ = false;
-  bool pcd_save_en_ = false;
-  bool runtime_pos_log_ = true;
-  int pcd_save_interval_ = -1;
-  bool traj_save_en_ = false;
-  std::string dataset_;
-
-  PointCloudType::Ptr pcl_wait_save_{new PointCloudType()};  // debug save
-  nav_msgs::Path path_;
-  geometry_msgs::PoseStamped msg_body_pose_;
-
 };
 
 }  // namespace simple_lio

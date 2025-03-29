@@ -23,7 +23,7 @@ find_package(catkin REQUIRED COMPONENTS
         rospy
         std_msgs
         pcl_ros
-        tf
+        tf2_ros
         message_generation
         eigen_conversions
         livox_ros_driver
