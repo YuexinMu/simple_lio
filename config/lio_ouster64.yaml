@@ -1,7 +1,7 @@
 lio_base:
     # common params
-    lidar_topic: "/ouster/points"
-    imu_topic: "/ouster/imu"
+    lidar_topic: "ouster/points"
+    imu_topic: "ouster/imu"
     time_sync_en: false
 
     # lidar params
