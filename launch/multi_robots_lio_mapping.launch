@@ -8,6 +8,9 @@
 
     <arg name="robot1_name" default="sct1"/>
     <arg name="robot2_name" default="sct2"/>
+    <arg name="robot3_name" default="sct3"/>
+
+    <arg name="anchor_robot" default="$(arg robot1_name)"/>
 
     <!--   robot1   -->
     <include file="$(find simple_lio)/launch/multi_robot_lio_mapping.launch">
@@ -17,6 +20,10 @@
         <arg name="body_frame" value="$(arg body_frame)"/>
         <arg name="init_frame" value="$(arg init_frame)"/>
         <arg name="base_frame" value="$(arg base_frame)"/>
+    </include>
+    <include file="$(find align_coordinate)/launch/multi_robot_align_coordinate.launch">
+        <arg name="anchor_robot" value="$(arg anchor_robot)"/>
+        <arg name="cur_robot" value="$(arg robot1_name)"/>
     </include>
 
     <!--   robot2   -->
@@ -28,7 +35,24 @@
         <arg name="init_frame" value="$(arg init_frame)"/>
         <arg name="base_frame" value="$(arg base_frame)"/>
     </include>
+    <include file="$(find align_coordinate)/launch/multi_robot_align_coordinate.launch">
+        <arg name="anchor_robot" value="$(arg anchor_robot)"/>
+        <arg name="cur_robot" value="$(arg robot2_name)"/>
+    </include>
 
+    <!--   robot2   -->
+    <include file="$(find simple_lio)/launch/multi_robot_lio_mapping.launch">
+        <arg name="load_rviz" value="$(arg load_rviz)"/>
+        <arg name="robot_name" value="$(arg robot3_name)"/>
+
+        <arg name="body_frame" value="$(arg body_frame)"/>
+        <arg name="init_frame" value="$(arg init_frame)"/>
+        <arg name="base_frame" value="$(arg base_frame)"/>
+    </include>
+    <include file="$(find align_coordinate)/launch/multi_robot_align_coordinate.launch">
+        <arg name="anchor_robot" value="$(arg anchor_robot)"/>
+        <arg name="cur_robot" value="$(arg robot3_name)"/>
+    </include>
 
     <!--   load world rivz   -->
     <group if="$(arg load_world_rviz)">
