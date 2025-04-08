@@ -111,6 +111,7 @@ public:
 
   void ObsModel(state_ikfom &state_ikf, esekfom::dyn_share_datastruct<double> &ekfom_data);
   void Finish(std::string log_dir);
+  void SavePcd(CloudPtr cloud_ptr);
 
   // debug save / show
   void PublishFrameEffectWorld(const ros::Publisher &pub_laser_cloud_effect_world);

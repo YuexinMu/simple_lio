@@ -194,6 +194,8 @@ void lio::Run(){
                     pub_point_cloud_world_);
   PublishLaserScan(PointCloudLidarToIMU(scan_undistort_), config_.body_frame,
                    pub_laser_scan_imu_);
+
+  SavePcd(PointCloudBodyToWorld(scan_down_body_));
   // Debug variables
   frame_num_++;
 }
@@ -433,6 +435,14 @@ void lio::Finish(std::string log_dir) {
   Timer::DumpIntoFile(log_name);
 
   LOG(INFO) << "finish done";
+}
+
+void lio::SavePcd(CloudPtr cloud_ptr) {
+  /**************** save path ****************/
+  std::string all_points_dir(std::string(std::string(ROOT_DIR) + "pcd/scans_")
+                             + std::to_string(scan_count_) + std::string(".pcd"));
+  pcl::PCDWriter pcd_writer;
+  pcd_writer.writeBinary(all_points_dir, *cloud_ptr);
 }
 
 template <typename T>

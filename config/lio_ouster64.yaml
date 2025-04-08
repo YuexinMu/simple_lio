@@ -39,7 +39,7 @@ lio_base:
     plane_threshold: 0.1    # default=0.1
     max_iteration: 3
 
-    nearest_neighbor_type: 2 # 1 for IKD_TREE, 2 for IVOX
+    nearest_neighbor_type: 1 # 1 for IKD_TREE, 2 for IVOX
 
     # frame info params
     body_frame: "ouster_lidar_link"
