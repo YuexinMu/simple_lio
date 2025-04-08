@@ -2,7 +2,8 @@
 <!-- Launch file for ouster OS2-64 LiDAR -->
     <arg name="load_rviz" default="true" />
 
-    <arg name="robot_name" default="sct"/>
+    <arg name="robot_name" default="$(env ROBOT_NAME)" doc="Robot type [sct]"/>
+<!--     <arg name="robot_name" default="sct"/> -->
 
     <arg name="body_frame" default="ouster_lidar_link" />
     <arg name="init_frame" default="odom" />
