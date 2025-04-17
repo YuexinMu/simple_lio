@@ -188,9 +188,9 @@ void lio::Run(){
   PublishPath(State2SE3(state_point_));
   PublishOdom(IMU2Base(State2SE3(state_point_)));
 
-  PublishPointCloud(PointCloudLidarToIMU(scan_undistort_), config_.body_frame,
+  PublishPointCloud(PointCloudLidarToIMU(scan_down_body_), config_.body_frame,
                     pub_point_cloud_imu_);
-  PublishPointCloud(PointCloudBodyToWorld(scan_undistort_), config_.init_frame,
+  PublishPointCloud(PointCloudBodyToWorld(scan_down_body_), config_.init_frame,
                     pub_point_cloud_world_);
   PublishLaserScan(PointCloudLidarToIMU(scan_undistort_), config_.body_frame,
                    pub_laser_scan_imu_);

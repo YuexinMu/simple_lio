@@ -1,7 +1,7 @@
 <launch>
 <!-- Launch file for ouster OS2-64 LiDAR -->
 
-    <arg name="rviz" default="true" />
+    <arg name="rviz" default="false" />
 
     <rosparam command="load" file="$(find simple_lio)/config/lio_ouster64.yaml" />
 
