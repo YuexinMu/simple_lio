@@ -1,6 +1,6 @@
 <launch>
 <!-- Launch file for ouster OS2-64 LiDAR -->
-    <arg name="load_rviz" default="true" />
+    <arg name="load_rviz" default="false" />
 
     <arg name="robot_name" default="$(env ROBOT_NAME)" doc="Robot type [sct]"/>
 <!--     <arg name="robot_name" default="sct"/> -->
@@ -24,3 +24,15 @@
         </group>
     </group>
 </launch>
+
+
+<!-- <launch> -->
+
+<!--     <arg name="robot_name" default="$(env ROBOT_NAME)" doc="Robot name as namespace"/> -->
+
+<!--      --><!--   robot   -->
+<!--     <group ns="$(arg robot_name)"> -->
+<!--         <include file="$(find ouster_ros)/launch/sensor.launch" /> -->
+<!--     </group> -->
+
+<!-- </launch> -->

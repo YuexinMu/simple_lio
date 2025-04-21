@@ -23,7 +23,7 @@ lio_base:
                   0, 0, 1]
 
     # lidar-imu params
-    imu2base_T: [ 0.0, 0.0, 0.35 ]
+    imu2base_T: [ 0.0, 0.0, 0.0 ]
     imu2base_R: [1, 0, 0,
                  0, 1, 0,
                  0, 0, 1]
