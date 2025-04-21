@@ -1,0 +1,38 @@
+<launch>
+<!-- Launch file for ouster OS2-64 LiDAR -->
+    <arg name="load_rviz" default="false" />
+
+    <arg name="robot_name" default="$(env ROBOT_NAME)" doc="Robot type [sct]"/>
+<!--     <arg name="robot_name" default="sct"/> -->
+
+    <arg name="body_frame" default="ouster_lidar_link" />
+    <arg name="init_frame" default="odom" />
+    <arg name="base_frame" default="base_link" />
+
+    <group ns="$(arg robot_name)">
+        <rosparam command="load" file="$(find simple_lio)/config/lio_ouster64.yaml" />
+
+        <param name="lio_base/body_frame" type="string" value="$(arg robot_name)/$(arg body_frame)"/>
+        <param name="lio_base/init_frame" type="string" value="$(arg robot_name)/$(arg init_frame)"/>
+        <param name="lio_base/base_frame" type="string" value="$(arg robot_name)/$(arg base_frame)"/>
+
+        <node pkg="simple_lio" type="run_lio_mapping" name="run_lio_mapping" output="screen" />
+
+        <group if="$(arg load_rviz)">
+            <node launch-prefix="nice" pkg="rviz" type="rviz" name="rviz"
+            args="-d $(find simple_lio)/config/rviz/simple_lio_$(arg robot_name).rviz" />
+        </group>
+    </group>
+</launch>
+
+
+<!-- <launch> -->
+
+<!--     <arg name="robot_name" default="$(env ROBOT_NAME)" doc="Robot name as namespace"/> -->
+
+<!--      --><!--   robot   -->
+<!--     <group ns="$(arg robot_name)"> -->
+<!--         <include file="$(find ouster_ros)/launch/sensor.launch" /> -->
+<!--     </group> -->
+
+<!-- </launch> -->

@@ -1,0 +1,71 @@
+<launch>
+    <arg name="load_rviz" default="false" />
+    <arg name="load_world_rviz" default="true" />
+
+    <arg name="body_frame" default="ouster_lidar_link" />
+    <arg name="init_frame" default="odom" />
+    <arg name="base_frame" default="base_link" />
+
+    <arg name="robot1_name" default="sct1"/>
+    <arg name="robot2_name" default="sct2"/>
+    <arg name="robot3_name" default="sct3"/>
+
+    <arg name="anchor_robot" default="$(arg robot1_name)"/>
+
+    <!--   robot1   -->
+    <include file="$(find simple_lio)/launch/multi_robot_lio_mapping.launch">
+        <arg name="load_rviz" value="$(arg load_rviz)"/>
+        <arg name="robot_name" value="$(arg robot1_name)"/>
+
+        <arg name="body_frame" value="$(arg body_frame)"/>
+        <arg name="init_frame" value="$(arg init_frame)"/>
+        <arg name="base_frame" value="$(arg base_frame)"/>
+    </include>
+    <include file="$(find align_coordinate)/launch/multi_robot_align_coordinate.launch">
+        <arg name="anchor_robot" value="$(arg anchor_robot)"/>
+        <arg name="cur_robot" value="$(arg robot1_name)"/>
+        <arg name="init_x" value="0.0"/>
+        <arg name="init_y" value="0.0"/>
+        <arg name="init_z" value="0.0"/>
+    </include>
+
+    <!--   robot2   -->
+    <include file="$(find simple_lio)/launch/multi_robot_lio_mapping.launch">
+        <arg name="load_rviz" value="$(arg load_rviz)"/>
+        <arg name="robot_name" value="$(arg robot2_name)"/>
+
+        <arg name="body_frame" value="$(arg body_frame)"/>
+        <arg name="init_frame" value="$(arg init_frame)"/>
+        <arg name="base_frame" value="$(arg base_frame)"/>
+    </include>
+    <include file="$(find align_coordinate)/launch/multi_robot_align_coordinate.launch">
+        <arg name="anchor_robot" value="$(arg anchor_robot)"/>
+        <arg name="cur_robot" value="$(arg robot2_name)"/>
+        <arg name="init_x" value="2.0"/>
+        <arg name="init_y" value="0.0"/>
+        <arg name="init_z" value="0.0"/>
+    </include>
+
+    <!--   robot3   -->
+<!--     <include file="$(find simple_lio)/launch/multi_robot_lio_mapping.launch"> -->
+<!--         <arg name="load_rviz" value="$(arg load_rviz)"/> -->
+<!--         <arg name="robot_name" value="$(arg robot3_name)"/> -->
+
+<!--         <arg name="body_frame" value="$(arg body_frame)"/> -->
+<!--         <arg name="init_frame" value="$(arg init_frame)"/> -->
+<!--         <arg name="base_frame" value="$(arg base_frame)"/> -->
+<!--     </include> -->
+<!--     <include file="$(find align_coordinate)/launch/multi_robot_align_coordinate.launch"> -->
+<!--         <arg name="anchor_robot" value="$(arg anchor_robot)"/> -->
+<!--         <arg name="cur_robot" value="$(arg robot3_name)"/> -->
+<!--         <arg name="init_x" value="0.0"/> -->
+<!--         <arg name="init_y" value="2.0"/> -->
+<!--         <arg name="init_z" value="0.0"/> -->
+<!--     </include> -->
+
+    <!--   load world rivz   -->
+    <group if="$(arg load_world_rviz)">
+        <node pkg="rviz" type="rviz" name="world_simple_lio_rviz"
+        args="-d $(find simple_lio)/config/rviz/simple_lio_world.rviz" />
+    </group>
+</launch>
