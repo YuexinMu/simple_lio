@@ -4,8 +4,6 @@ Panels:
     Name: Displays
     Property Tree Widget:
       Expanded:
-        - /sct11/lio_path1
-        - /sct21/lio_path1
         - /sct21/lio_path1/Status1
         - /sct31/cloud_world1/Autocompute Value Bounds1
         - /sct31/RobotModel1
@@ -362,7 +360,7 @@ Visualization Manager:
           Color: 255; 255; 255
           Color Transformer: FlatColor
           Decay Time: 1
-          Enabled: true
+          Enabled: false
           Invert Rainbow: false
           Max Color: 255; 255; 255
           Min Color: 0; 0; 0
@@ -377,7 +375,7 @@ Visualization Manager:
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
-          Value: true
+          Value: false
         - Alpha: 1
           Class: rviz/RobotModel
           Collision Enabled: false
@@ -628,20 +626,26 @@ Visualization Manager:
   Value: true
   Views:
     Current:
-      Angle: -1.6399999856948853
-      Class: rviz/TopDownOrtho
+      Class: rviz/XYOrbit
+      Distance: 17.623416900634766
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
+      Field of View: 0.7853981852531433
+      Focal Point:
+        X: -1.5226891040802002
+        Y: 5.032255172729492
+        Z: 1.9073486328125e-06
+      Focal Shape Fixed Size: false
+      Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Scale: 64.57970428466797
+      Pitch: 0.9603980183601379
       Target Frame: body
-      X: 2.6366794109344482
-      Y: 1.152888298034668
+      Yaw: 1.4503977298736572
     Saved: ~
 Window Geometry:
   Displays:
