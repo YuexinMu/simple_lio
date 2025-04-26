@@ -453,6 +453,7 @@ void lio::PublishPath(const SopSE3& pose) {
   msg_body_pose.header.frame_id = config_.init_frame;
 
   /*** if path is too large, the rvis will crash ***/
+  path_.header.stamp = ros::Time().fromSec(lidar_end_time_);
   path_.poses.push_back(msg_body_pose);
 
   pub_path_.publish(path_);
@@ -743,9 +744,9 @@ void lio::SubAndPubToROS(ros::NodeHandle &nh){
   
   pub_odom_ = nh.advertise<nav_msgs::Odometry>(config_.odom_topic, 100);
   pub_path_ = nh.advertise<nav_msgs::Path>(config_.path_topic, 100);
-  pub_point_cloud_world_ = nh.advertise<sensor_msgs::PointCloud2>(config_.cloud_world_topic, 10000);
-  pub_point_cloud_imu_ = nh.advertise<sensor_msgs::PointCloud2>(config_.cloud_imu_topic, 10000);
-  pub_laser_scan_imu_ = nh.advertise<sensor_msgs::LaserScan>(config_.scan_imu_topic, 10000);
+  pub_point_cloud_world_ = nh.advertise<sensor_msgs::PointCloud2>(config_.cloud_world_topic, 10);
+  pub_point_cloud_imu_ = nh.advertise<sensor_msgs::PointCloud2>(config_.cloud_imu_topic, 10);
+  pub_laser_scan_imu_ = nh.advertise<sensor_msgs::LaserScan>(config_.scan_imu_topic, 10);
 }
 
 bool lio::LoadParams(ros::NodeHandle &nh){
