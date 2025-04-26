@@ -580,7 +580,7 @@ SopSE3 lio::IMU2Base(const SopSE3& state_imu){
     }
   }
   if(get_lidar_base_trans_){
-    trans_pose = base_lidar_trans_.inverse() * state_imu;
+    trans_pose = state_imu * base_lidar_trans_.inverse();
   }
   return trans_pose;
 }
