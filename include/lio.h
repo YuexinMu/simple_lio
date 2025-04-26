@@ -10,6 +10,8 @@
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/LaserScan.h>
+#include <tf2_ros/transform_listener.h>
+#include <geometry_msgs/TransformStamped.h>
 #include <condition_variable>
 #include <thread>
 
@@ -46,8 +48,6 @@ struct SimpleLioConfig {
   // lidar-imu params
   std::vector<double> extrinsic_T{3, 0.0};
   std::vector<double> extrinsic_R{9, 0.0};
-  std::vector<double> imu2base_T{3, 0.0};
-  std::vector<double> imu2base_R{9, 0.0};
 
   // preprocess params
   int point_filter_num;
@@ -126,7 +126,7 @@ private:
                          const ros::Publisher& pub);
 
   SopSE3 State2SE3(state_ikfom state);
-  SopSE3 IMU2Base(SopSE3 state_imu);
+  SopSE3 IMU2Base(const SopSE3& state_imu);
 
   void PointBodyToWorld(PointType const *pi, PointType *const po);
   void PointBodyToWorld(const Vec3f &pi, PointType *const po);
@@ -190,6 +190,9 @@ private:
   double last_timestamp_imu_ = -1.0;
   double first_lidar_time_ = 0.0;
   bool lidar_pushed_ = false;
+  tf2_ros::Buffer tf_buffer_;
+  geometry_msgs::TransformStamped lidar_base_link_trans_;
+  SopSE3 base_lidar_trans_;
 
   /// statistics and flags ///
   int scan_count_ = 0;
@@ -199,6 +202,7 @@ private:
   double lidar_mean_scantime_ = 0.0;
   int scan_num_ = 0;
   bool timediff_set_flg_ = false;
+  bool get_lidar_base_trans_ = false;
   int effect_feat_num_ = 0, frame_num_ = 0;
 
   ///////////////////////// EKF inputs and output ///////////////////////////////////////////////////////

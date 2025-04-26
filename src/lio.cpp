@@ -459,7 +459,7 @@ void lio::PublishPath(const SopSE3& pose) {
 }
 
 void lio::PublishOdom(const SopSE3& pose) {
-  odometry_.header.stamp = ros::Time().fromSec(lidar_end_time_);  // ros::Time().fromSec(lidar_end_time_);
+  odometry_.header.stamp = ros::Time().fromSec(lidar_end_time_);
   SetPoseStamp(pose, odometry_.pose);
   pub_odom_.publish(odometry_);
 
@@ -554,17 +554,34 @@ SopSE3 lio::State2SE3(state_ikfom state){
   return se_3;
 }
 
-SopSE3 lio::IMU2Base(SopSE3 state_imu){
-  Vec3d Vec_imu2base_T = VecFromArray<double>(config_.imu2base_T);
-  Mat3d Mat_imu2base_R = MatFromArray<double>(config_.imu2base_R);
-
-  Mat4d imu2base_Mat4 = Mat4d::Identity();
-  imu2base_Mat4.block<3,1>(0,3) = Vec_imu2base_T;
-  imu2base_Mat4.block<3,3>(0,0) = Mat_imu2base_R;
-
-  SopSE3 imu2base_SE3 = Mat4ToSE3(imu2base_Mat4);
-  SopSE3 odom_base_SE3 = state_imu * imu2base_SE3.inverse();
-  return odom_base_SE3;
+SopSE3 lio::IMU2Base(const SopSE3& state_imu){
+  SopSE3 trans_pose = state_imu;
+  if(!get_lidar_base_trans_){
+    static tf2_ros::TransformListener tf_listener(tf_buffer_);
+    try {
+      lidar_base_link_trans_ =
+          tf_buffer_.lookupTransform(config_.base_frame, config_.body_frame, ros::Time(0));
+      get_lidar_base_trans_ = true;
+      Vec3d t(lidar_base_link_trans_.transform.translation.x,
+              lidar_base_link_trans_.transform.translation.y,
+              lidar_base_link_trans_.transform.translation.z);
+      Quatd q(lidar_base_link_trans_.transform.rotation.w,
+              lidar_base_link_trans_.transform.rotation.x,
+              lidar_base_link_trans_.transform.rotation.y,
+              lidar_base_link_trans_.transform.rotation.z);
+      base_lidar_trans_ = SopSE3(q, t);
+      ROS_INFO_STREAM("Get " << config_.base_frame << " to " << config_.body_frame
+                             << " successful." << std::endl);
+    }
+    catch (tf2::TransformException &ex) {
+      get_lidar_base_trans_ = false;
+      ROS_WARN("%s", ex.what());
+    }
+  }
+  if(get_lidar_base_trans_){
+    trans_pose = base_lidar_trans_.inverse() * state_imu;
+  }
+  return trans_pose;
 }
 
 void lio::PublishFrameEffectWorld(const ros::Publisher &pub_laser_cloud_effect_world) {
@@ -750,8 +767,6 @@ bool lio::LoadParams(ros::NodeHandle &nh){
 
   nh.param<std::vector<double>>("lio_base/extrinsic_T", config_.extrinsic_T, std::vector<double>());
   nh.param<std::vector<double>>("lio_base/extrinsic_R", config_.extrinsic_R, std::vector<double>());
-  nh.param<std::vector<double>>("lio_base/imu2base_T", config_.imu2base_T, std::vector<double>());
-  nh.param<std::vector<double>>("lio_base/imu2base_R", config_.imu2base_R, std::vector<double>());
 
   nh.param<int>("lio_base/point_filter_num", config_.point_filter_num, 2);
   nh.param<float>("lio_base/filter_size_surf", config_.filter_size_surf, 0.5);
