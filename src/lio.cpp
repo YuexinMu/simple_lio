@@ -188,12 +188,24 @@ void lio::Run(){
   PublishPath(State2SE3(state_point_));
   PublishOdom(IMU2Base(State2SE3(state_point_)));
 
-  PublishPointCloud(PointCloudLidarToIMU(scan_down_body_), config_.body_frame,
-                    pub_point_cloud_imu_);
-  PublishPointCloud(PointCloudBodyToWorld(scan_down_body_), config_.init_frame,
-                    pub_point_cloud_world_);
-  PublishLaserScan(PointCloudLidarToIMU(scan_undistort_), config_.body_frame,
-                   pub_laser_scan_imu_);
+  CloudPtr cloud_imu;
+  CloudPtr cloud_world;
+  if(config_.pub_dense){
+    cloud_imu = PointCloudLidarToIMU(scan_undistort_);
+    cloud_world = PointCloudBodyToWorld(scan_undistort_);
+  } else{
+    cloud_imu = PointCloudLidarToIMU(scan_down_body_);
+    cloud_world = PointCloudBodyToWorld(scan_down_body_);
+  }
+
+  PublishPointCloud(cloud_imu, config_.body_frame, pub_point_cloud_imu_);
+  PublishPointCloud(cloud_world, config_.init_frame, pub_point_cloud_world_);
+//  PublishLaserScan(PointCloudLidarToIMU(scan_undistort_), config_.body_frame,
+//                   pub_laser_scan_imu_);
+
+  if(config_.save_pcd){
+    SavePcd(frame_num_, cloud_world);
+  }
   // Debug variables
   frame_num_++;
 }
@@ -576,7 +588,7 @@ SopSE3 lio::IMU2Base(const SopSE3& state_imu){
     }
     catch (tf2::TransformException &ex) {
       get_lidar_base_trans_ = false;
-      ROS_WARN("%s", ex.what());
+      ROS_WARN_ONCE("%s", ex.what());
     }
   }
   if(get_lidar_base_trans_){
@@ -749,6 +761,13 @@ void lio::SubAndPubToROS(ros::NodeHandle &nh){
   pub_laser_scan_imu_ = nh.advertise<sensor_msgs::LaserScan>(config_.scan_imu_topic, 10);
 }
 
+void lio::SavePcd(size_t id, CloudPtr point_cloud){
+  std::string file_name = std::string(ROOT_DIR) + "pcd/pcd_world_" +
+                          std::to_string(id) + ".pcd";
+  pcl::PCDWriter pcd_writer;
+  pcd_writer.writeBinary(file_name, *point_cloud);
+}
+
 bool lio::LoadParams(ros::NodeHandle &nh){
   // get params from param server
   // common params
@@ -791,6 +810,9 @@ bool lio::LoadParams(ros::NodeHandle &nh){
   nh.param<std::string>("lio_base/cloud_imu_topic", config_.cloud_imu_topic, "cloud_registered_imu");
   nh.param<std::string>("lio_base/scan_imu_topic", config_.scan_imu_topic, "scan_imu");
   nh.param<bool>("lio_base/pub_use_dataset_time", config_.pub_use_dataset_time, false);
+
+  nh.param<bool>("lio_base/pub_dense", config_.pub_dense, false);
+  nh.param<bool>("lio_base/save_pcd", config_.save_pcd, false);
 
   // ivox params
   nh.param<float>("faster_lio/ivox_grid_resolution", config_.resolution, 0.2);

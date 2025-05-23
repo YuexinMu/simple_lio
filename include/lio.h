@@ -71,6 +71,10 @@ struct SimpleLioConfig {
   std::string scan_imu_topic;
   bool pub_use_dataset_time;
 
+  bool pub_dense;
+  bool save_pcd;
+
+
   int nn_type;
 
   // ivox params
@@ -137,6 +141,7 @@ private:
   void MapIncremental();
 
   void SubAndPubToROS(ros::NodeHandle &nh);
+  void SavePcd(size_t id, CloudPtr point_cloud);
 
   bool LoadParams(ros::NodeHandle &nh);
   bool LoadParamsFromYAML(const std::string &yaml);

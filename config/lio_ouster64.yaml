@@ -46,6 +46,9 @@ lio_base:
     cloud_imu_topic: "cloud_registered_imu"
     scan_imu_topic: "scan"
 
+    pub_dense: false
+    save_pcd: false
+
 faster_lio:
     # ivox params
     ivox_grid_resolution: 0.6   # default=0.2
