@@ -200,8 +200,8 @@ void lio::Run(){
 
   PublishPointCloud(cloud_imu, config_.body_frame, pub_point_cloud_imu_);
   PublishPointCloud(cloud_world, config_.init_frame, pub_point_cloud_world_);
-//  PublishLaserScan(PointCloudLidarToIMU(scan_undistort_), config_.body_frame,
-//                   pub_laser_scan_imu_);
+  PublishLaserScan(PointCloudLidarToIMU(scan_undistort_), config_.body_frame,
+                   pub_laser_scan_imu_);
 
   if(config_.save_pcd){
     SavePcd(frame_num_, cloud_world);
