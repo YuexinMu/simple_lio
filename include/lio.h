@@ -114,7 +114,8 @@ public:
   bool SyncPackages();
 
   void ObsModel(state_ikfom &state_ikf, esekfom::dyn_share_datastruct<double> &ekfom_data);
-  void Finish(std::string log_dir);
+  void Finish(const std::string& log_dir, bool save_path = true);
+  void SavePathTum(const std::string file_name, const nav_msgs::Path& path);
   void SavePcd(CloudPtr cloud_ptr);
 
   // debug save / show

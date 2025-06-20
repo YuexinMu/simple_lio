@@ -432,19 +432,24 @@ void lio::ObsModel(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
   });
 }
 
-void lio::Finish(std::string log_dir) {
+void lio::Finish(const std::string& log_dir, bool save_path) {
   /**************** save path ****************/
   auto now = std::chrono::system_clock::now();
   std::time_t t = std::chrono::system_clock::to_time_t(now);
 
   std::ostringstream oss;
-  oss << std::put_time(std::localtime(&t), "%Y-%m-%d_%H-%M-%S") << ".csv";
+  oss << std::put_time(std::localtime(&t), "%Y-%m-%d-%H-%M-%S") ;
 
-  std::string log_name = log_dir + "/" + oss.str();
+  std::string log_name = log_dir + "/log_" + oss.str() + ".csv";
   Timer::PrintAll();
   Timer::DumpIntoFile(log_name);
 
-  LOG(INFO) << "finish done";
+  if(save_path){
+    std::string traj_file = log_dir + "/lio_path_" + oss.str() + ".txt";
+    SavePathTum(traj_file, path_);
+  }
+
+  LOG(INFO) << "log info save finished.";
 }
 
 template <typename T>
@@ -759,6 +764,28 @@ void lio::SubAndPubToROS(ros::NodeHandle &nh){
   pub_point_cloud_world_ = nh.advertise<sensor_msgs::PointCloud2>(config_.cloud_world_topic, 10);
   pub_point_cloud_imu_ = nh.advertise<sensor_msgs::PointCloud2>(config_.cloud_imu_topic, 10);
   pub_laser_scan_imu_ = nh.advertise<sensor_msgs::LaserScan>(config_.scan_imu_topic, 10);
+}
+
+void lio::SavePathTum(const std::string file_name,
+                            const nav_msgs::Path& path) {
+  std::ofstream ofs;
+  ofs.open(file_name, std::ios::out);
+  if (!ofs.is_open()) {
+    LOG(ERROR) << "Failed to open trajectory file: " << file_name << std::endl;
+    return;
+  }
+
+  // tum trajectory format
+  //  ofs << "#timestamp x y z q_x q_y q_z q_w" << std::endl;
+  for (const auto& p : path.poses) {
+    ofs << std::fixed << std::setprecision(6) << p.header.stamp.toSec() << " "
+        << std::setprecision(15) << p.pose.position.x << " "
+        << p.pose.position.y << " " << p.pose.position.z << " "
+        << p.pose.orientation.x << " " << p.pose.orientation.y << " "
+        << p.pose.orientation.z << " " << p.pose.orientation.w << std::endl;
+  }
+  LOG(INFO) << "Write path into: " << file_name;
+  ofs.close();
 }
 
 void lio::SavePcd(size_t id, CloudPtr point_cloud){
